@@ -15,7 +15,9 @@ def _csv_env(name: str, default: str = "") -> list[str]:
 
 def _env(name: str, default: str) -> str:
     value = os.getenv(name)
-    return default if value in {None, ""} else value
+    if value is None or value == "":
+        return default
+    return value
 
 
 def _bool_env(name: str, default: str) -> bool:

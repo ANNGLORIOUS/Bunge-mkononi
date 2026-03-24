@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Sequence, cast
 
 from django.conf import settings
 from django.db.models import Q, Sum
+from django.db.models.query import QuerySet
 from django.http import HttpResponse
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
@@ -11,6 +13,7 @@ from django.utils.decorators import method_decorator
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from .models import Bill, BillStatus, CountyStat, LogEventType, Petition, PollChoice, PollResponse, Representative, Subscription, SubscriptionChannel, SystemLog
@@ -43,7 +46,7 @@ USSD_TITLE_LIMIT = 24
 
 
 class IsStaffOrReadOnly(permissions.BasePermission):
-    def has_permission(self, request, view):
+    def has_permission(self, request, view):  # pyright: ignore[reportIncompatibleMethodOverride]
         if request.method in permissions.SAFE_METHODS:
             return True
         return bool(request.user and request.user.is_staff)
@@ -216,7 +219,7 @@ def _format_bill_list_menu(title: str, bills: list[Bill], prompt: str, page: int
     return "CON " + title + page_label + "\n" + "\n".join(lines) + f"\n{prompt}\n" + "\n".join(navigation)
 
 
-def _resolve_bill_list_selection(parts: list[str], bills: list[Bill]) -> tuple[str, int, Bill | None, list[str]]:
+def _resolve_bill_list_selection(parts: Sequence[str], bills: list[Bill]) -> tuple[str, int, Bill | None, list[str]]:
     page = 1
     selection_token: str | None = None
     selection_position = -1
@@ -247,7 +250,7 @@ def _resolve_bill_list_selection(parts: list[str], bills: list[Bill]) -> tuple[s
     if index < 0 or index >= len(page_bills):
         return ("invalid", current_page, None, [])
 
-    return ("selected", current_page, page_bills[index], parts[selection_position + 1 :])
+    return ("selected", current_page, page_bills[index], list(parts[selection_position + 1 :]))
 
 
 def _resolve_vote_choice(choice: str) -> str | None:
@@ -324,16 +327,22 @@ class DashboardAPIView(APIView):
 class BillViewSet(viewsets.ModelViewSet):
     serializer_class = BillSerializer
     permission_classes = [IsStaffOrReadOnly]
+    queryset: QuerySet[Bill] = (
+        Bill.objects.select_related("petition").prefetch_related(
+            "representative_votes__representative",
+            "county_stats",
+            "poll_responses",
+            "subscriptions",
+        )
+    )
     search_fields = ["title", "summary", "category", "status", "sponsor"]
     ordering_fields = ["date_introduced", "title", "subscriber_count", "is_hot"]
 
-    def get_queryset(self):
-        queryset = (
-            Bill.objects.select_related("petition")
-            .prefetch_related("representative_votes__representative", "county_stats", "poll_responses", "subscriptions")
-        )
+    def get_queryset(self) -> QuerySet[Bill]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        request = cast(Request, self.request)
+        queryset = self.queryset.all()
 
-        params = self.request.query_params
+        params = request.query_params
         status_filter = params.get("status")
         category = params.get("category")
         hot = params.get("hot")
@@ -394,11 +403,13 @@ class BillViewSet(viewsets.ModelViewSet):
 class PetitionViewSet(viewsets.ModelViewSet):
     serializer_class = PetitionSerializer
     permission_classes = [IsStaffOrReadOnly]
+    queryset: QuerySet[Petition] = Petition.objects.select_related("bill")
     search_fields = ["title", "description"]
 
-    def get_queryset(self):
-        queryset = Petition.objects.select_related("bill")
-        bill_id = self.request.query_params.get("billId") or self.request.query_params.get("bill")
+    def get_queryset(self) -> QuerySet[Petition]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        request = cast(Request, self.request)
+        queryset = self.queryset.all()
+        bill_id = request.query_params.get("billId") or request.query_params.get("bill")
         if bill_id:
             queryset = queryset.filter(bill_id=bill_id)
         return queryset
@@ -407,11 +418,13 @@ class PetitionViewSet(viewsets.ModelViewSet):
 class RepresentativeViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = RepresentativeSerializer
     permission_classes = [permissions.AllowAny]
+    queryset: QuerySet[Representative] = Representative.objects.prefetch_related("votes__bill")
     search_fields = ["name", "constituency", "county", "party"]
 
-    def get_queryset(self):
-        queryset = Representative.objects.prefetch_related("votes__bill")
-        search = self.request.query_params.get("search")
+    def get_queryset(self) -> QuerySet[Representative]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        request = cast(Request, self.request)
+        queryset = self.queryset.all()
+        search = request.query_params.get("search")
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search)
@@ -423,18 +436,21 @@ class RepresentativeViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        context["bill_id"] = self.request.query_params.get("billId") or self.request.query_params.get("bill")
+        request = cast(Request, self.request)
+        context["bill_id"] = request.query_params.get("billId") or request.query_params.get("bill")
         return context
 
 
 class CountyStatViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CountyStatSerializer
     permission_classes = [permissions.AllowAny]
+    queryset: QuerySet[CountyStat] = CountyStat.objects.select_related("bill")
     search_fields = ["county", "sentiment"]
 
-    def get_queryset(self):
-        queryset = CountyStat.objects.select_related("bill")
-        bill_id = self.request.query_params.get("billId") or self.request.query_params.get("bill")
+    def get_queryset(self) -> QuerySet[CountyStat]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        request = cast(Request, self.request)
+        queryset = self.queryset.all()
+        bill_id = request.query_params.get("billId") or request.query_params.get("bill")
         if bill_id:
             queryset = queryset.filter(bill_id=bill_id)
         return queryset
@@ -442,7 +458,7 @@ class CountyStatViewSet(viewsets.ReadOnlyModelViewSet):
 
 class SubscriptionViewSet(viewsets.ModelViewSet):
     serializer_class = SubscriptionSerializer
-    queryset = Subscription.objects.select_related("bill")
+    queryset: QuerySet[Subscription] = Subscription.objects.select_related("bill")
     search_fields = ["phone_number", "channel"]
 
     def get_permissions(self):
@@ -453,9 +469,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        bill = serializer.validated_data.get("bill")
-        phone_number = serializer.validated_data["phone_number"]
-        channel = serializer.validated_data.get("channel") or "sms"
+        validated_data = cast(dict[str, object], serializer.validated_data or {})
+        bill = cast(Bill, validated_data["bill"])
+        phone_number = str(validated_data["phone_number"])
+        channel = str(validated_data.get("channel") or "sms")
         subscription, created = create_subscription(bill, phone_number, channel)
         response_data = SubscriptionSerializer(subscription).data
         response_data["created"] = created
@@ -464,7 +481,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
 class PollResponseViewSet(viewsets.ModelViewSet):
     serializer_class = PollResponseSerializer
-    queryset = PollResponse.objects.select_related("bill")
+    queryset: QuerySet[PollResponse] = PollResponse.objects.select_related("bill")
     search_fields = ["phone_number", "choice"]
 
     def get_permissions(self):
@@ -475,9 +492,10 @@ class PollResponseViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        bill = serializer.validated_data["bill"]
-        phone_number = serializer.validated_data.get("phone_number", "")
-        choice = serializer.validated_data["choice"]
+        validated_data = cast(dict[str, object], serializer.validated_data or {})
+        bill = cast(Bill, validated_data["bill"])
+        phone_number = str(validated_data.get("phone_number", ""))
+        choice = str(validated_data["choice"])
         response = create_poll_response(bill, phone_number, choice)
         response_data = PollResponseSerializer(response).data
         petition = getattr(bill, "petition", None)
@@ -488,11 +506,13 @@ class PollResponseViewSet(viewsets.ModelViewSet):
 class SystemLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = SystemLogSerializer
     permission_classes = [permissions.IsAdminUser]
+    queryset: QuerySet[SystemLog] = SystemLog.objects.all()
     search_fields = ["message", "event_type"]
 
-    def get_queryset(self):
-        queryset = SystemLog.objects.all()
-        event_type = self.request.query_params.get("eventType") or self.request.query_params.get("event_type")
+    def get_queryset(self) -> QuerySet[SystemLog]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        request = cast(Request, self.request)
+        queryset = self.queryset.all()
+        event_type = request.query_params.get("eventType") or request.query_params.get("event_type")
         if event_type:
             queryset = queryset.filter(event_type=event_type)
         return queryset
@@ -612,8 +632,9 @@ class ScrapeBillsAPIView(APIView):
         serializer = ScrapeTriggerSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        url = serializer.validated_data["url"]
-        timeout = serializer.validated_data["timeout"]
+        validated_data = cast(dict[str, object], serializer.validated_data or {})
+        url = str(validated_data.get("url", ""))
+        timeout = int(validated_data.get("timeout", 30))
 
         from .scrapers import scrape_parliament_bills  # noqa: PLC0415
 
