@@ -10,12 +10,8 @@ interface Props {
 }
 
 export default function BillCard({ bill, petition }: Props) {
-<<<<<<< HEAD
-  const progressPercent = petition ? (petition.signatureCount / petition.goal) * 100 : 0;
-=======
   const livePetition = petition ?? bill.petition ?? undefined;
   const progressPercent = livePetition && livePetition.goal > 0 ? (livePetition.signatureCount / livePetition.goal) * 100 : 0;
->>>>>>> master
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition flex flex-col h-full">
@@ -26,14 +22,11 @@ export default function BillCard({ bill, petition }: Props) {
           </span>
           <span className="text-sm font-medium text-slate-500">{bill.status}</span>
         </div>
-<<<<<<< HEAD
-=======
         {bill.sponsor && (
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
             Sponsored by {bill.sponsor}
           </p>
         )}
->>>>>>> master
         
         {/* Title links to the detail page */}
         <Link href={`/bill/${bill.id}`}>
@@ -44,20 +37,12 @@ export default function BillCard({ bill, petition }: Props) {
         
         <p className="text-slate-600 text-sm mb-4 line-clamp-2">{bill.summary}</p>
 
-<<<<<<< HEAD
-        {petition && (
-=======
         {livePetition && (
->>>>>>> master
           <div className="space-y-3">
             <div className="flex justify-between text-xs font-semibold">
               <span className="text-slate-500">Signatures</span>
               <span className="text-orange-600">
-<<<<<<< HEAD
-                {petition.signatureCount.toLocaleString()} / {petition.goal.toLocaleString()}
-=======
                 {livePetition.signatureCount.toLocaleString()} / {livePetition.goal.toLocaleString()}
->>>>>>> master
               </span>
             </div>
             <div className="w-full bg-slate-100 h-2 rounded-full">
@@ -72,21 +57,6 @@ export default function BillCard({ bill, petition }: Props) {
       
       <div className="bg-slate-50 p-4 border-t border-slate-200 flex gap-2">
         {/* Primary Action: View Details */}
-<<<<<<< HEAD
-        <Link href={`/bill/${bill.id}`} className="flex-1">
-          <button className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition">
-            View Details
-          </button>
-        </Link>
-        
-        <button className="flex-1 bg-white border border-slate-300 text-slate-700 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition">
-          Track via SMS
-        </button>
-      </div>
-    </div>
-  );
-}
-=======
         <Link href={`/bill/${bill.id}`} className="flex-1 rounded-lg bg-indigo-600 text-white py-2 text-center text-sm font-semibold hover:bg-indigo-700 transition">
           View Details
         </Link>
@@ -109,4 +79,3 @@ export default function BillCard({ bill, petition }: Props) {
     </div>
   );
 }
->>>>>>> master
