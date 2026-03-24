@@ -4,28 +4,17 @@ Bunge Mkononi is a civic-tech platform designed to bridge the gap between the Ke
 ## 🚀 Key Features
 1. Citizen DashboardLive Bill Tracking: A visual timeline showing the progress of bills from First Reading to Presidential Assent.Member Tracker: A transparency tool showing how specific MPs voted on key legislation.Participation Hub: A "Live Opinion Poll" allowing citizens to vote "Support" or "Oppose" on active bills.Regional Impact Map: Data visualization showing sentiment across different counties.
 2. Admin Command Center (Protected)Secure Access: Guarded by a dedicated authentication layer (AdminGuard).Legislative Management: Admins can transition bills through different stages.AT SMS Broadcaster: A one-click button to trigger mass SMS alerts to thousands of subscribers via Africa's Talking API.System Logs: Real-time monitoring of USSD hits and SMS dispatch status.
-<<<<<<< HEAD
-3. Inclusive Offline Access (Africa's Talking)USSD (384100#): Allows users without smartphones to vote and check bill status.SMS (22334): Users can send keywords like TRACK [BillID] to receive automated status updates.🛠️ Frontend Technical StackFramework: Next.js 14+ (App Router)Styling: Tailwind CSS (Mobile-first, dark/light theme separation)Icons: Lucide ReactState Management: React Hooks (useState, useEffect)Animations: Framer Motion / CSS Transitions
-
-
-### 🔌 Integration Points
- (For Backend Devs)The frontend is currently built with Mock Data and is ready for API integration.FeatureBackend ExpectationAT IntegrationVotingPOST /api/votesUpdates signatureCountStatus ChangePATCH /api/bills/:idTriggers AT SMS to subscribersTrackingPOST /api/trackSubscribes phone number to updatesUSSD MenuCallback URLHandles *384*100# session logic
-=======
 3. Inclusive Offline Access (Africa's Talking)USSD (*384*16250#): Allows users without smartphones to browse bills, view details, subscribe, and vote.SMS (22334): Users can send keywords like TRACK [BillID] to receive automated status updates.🛠️ Frontend Technical StackFramework: Next.js 14+ (App Router)Styling: Tailwind CSS (Mobile-first, dark/light theme separation)Icons: Lucide ReactState Management: React Hooks (useState, useEffect)Animations: Framer Motion / CSS Transitions
 
 
 ### 🔌 Integration Points
 The frontend now reads live data from the Django API and uses the scraper for bill population.
->>>>>>> master
 
 ### 🛠️ Installation & SetupClone the repo
 Git clone https://[github.com/your-username/bunge-mkononi.git](https://github.com/ANNGLORIOUS/Bunge-mkononi)
 
 ### Install dependencies:Bashnpm install
 Run the development server:npm run dev
-<<<<<<< HEAD
-Access Admin Panel:Navigate to /admin and enter the key: bunge2026
-=======
 Access Admin Panel:Navigate to /admin and sign in with a Django admin account for protected actions.
 
 ## 🐍 Django Backend
@@ -134,4 +123,3 @@ Inbound SMS subscribers can text `TRACK <bill id or bill title>` to the shortcod
 ### Data model
 - `Bill`, `Petition`, `Representative`, `RepresentativeVote`
 - `CountyStat`, `PollResponse`, `Subscription`, `SystemLog`
->>>>>>> master
