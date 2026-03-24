@@ -1,0 +1,29 @@
+databases:
+  - name: bunge-mkononi-db
+    plan: free
+    databaseName: bunge_mkononi
+    region: oregon
+
+services:
+  - type: web
+    name: bunge-mkononi-backend
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash render_start.sh
+    healthCheckPath: /api/health/
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bunge-mkononi-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_FRONTEND_ORIGIN
+        value: https://bunge-mkononi.vercel.app
+      - key: DJANGO_BOOTSTRAP_ON_STARTUP
+        value: "1"

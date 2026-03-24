@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+'use client';
+
+>>>>>>> master
 import { CheckCircle2, Circle } from 'lucide-react';
 import { BillStatus } from '@/types';
 
@@ -31,4 +36,8 @@ export default function BillTimeline({ currentStage }: { currentStage: BillStatu
       </div>
     </div>
   );
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> master
