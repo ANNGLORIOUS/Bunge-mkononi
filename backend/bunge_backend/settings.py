@@ -12,6 +12,11 @@ def _csv_env(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _env(name: str, default: str) -> str:
+    value = os.getenv(name)
+    return default if value in {None, ""} else value
+
+
 def _load_env_file(path: Path) -> None:
     if not path.exists():
         return
@@ -31,8 +36,8 @@ def _load_env_file(path: Path) -> None:
 _load_env_file(BASE_DIR / ".env")
 
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-change-me-for-local-dev")
-DEBUG = os.getenv("DJANGO_DEBUG", "1").lower() in {"1", "true", "yes", "on"}
+SECRET_KEY = _env("DJANGO_SECRET_KEY", "django-insecure-change-me-for-local-dev")
+DEBUG = _env("DJANGO_DEBUG", "1").lower() in {"1", "true", "yes", "on"}
 ALLOWED_HOSTS = _csv_env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
 INSTALLED_APPS = [
@@ -78,19 +83,27 @@ TEMPLATES = [
 WSGI_APPLICATION = "bunge_backend.wsgi.application"
 ASGI_APPLICATION = "bunge_backend.asgi.application"
 
-db_engine = os.getenv("DJANGO_DB_ENGINE", "django.db.backends.sqlite3")
-db_name = os.getenv("DJANGO_DB_NAME", str(BASE_DIR / "db.sqlite3"))
+db_engine = _env("DJANGO_DB_ENGINE", "django.db.backends.postgresql")
+db_name = _env(
+    "DJANGO_DB_NAME",
+    "bunge_mkononi" if db_engine.endswith("postgresql") else str(BASE_DIR / "db.sqlite3"),
+)
 if db_engine.endswith("sqlite3") and not os.path.isabs(db_name):
     db_name = str(BASE_DIR / db_name)
+
+db_user = _env("DJANGO_DB_USER", "postgres" if db_engine.endswith("postgresql") else "")
+db_password = _env("DJANGO_DB_PASSWORD", "")
+db_host = _env("DJANGO_DB_HOST", "localhost" if db_engine.endswith("postgresql") else "")
+db_port = _env("DJANGO_DB_PORT", "5432" if db_engine.endswith("postgresql") else "")
 
 DATABASES = {
     "default": {
         "ENGINE": db_engine,
         "NAME": db_name,
-        "USER": os.getenv("DJANGO_DB_USER", ""),
-        "PASSWORD": os.getenv("DJANGO_DB_PASSWORD", ""),
-        "HOST": os.getenv("DJANGO_DB_HOST", ""),
-        "PORT": os.getenv("DJANGO_DB_PORT", ""),
+        "USER": db_user,
+        "PASSWORD": db_password,
+        "HOST": db_host,
+        "PORT": db_port,
     }
 }
 
@@ -113,10 +126,10 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-AFRICASTALKING_USERNAME = os.getenv("AFRICASTALKING_USERNAME", "sandbox")
-AFRICASTALKING_API_KEY = os.getenv("AFRICASTALKING_API_KEY", "")
-AFRICASTALKING_SENDER_ID = os.getenv("AFRICASTALKING_SENDER_ID", "")
-AFRICASTALKING_SMS_TIMEOUT = int(os.getenv("AFRICASTALKING_SMS_TIMEOUT", "20"))
+AFRICASTALKING_USERNAME = _env("AFRICASTALKING_USERNAME", "sandbox")
+AFRICASTALKING_API_KEY = _env("AFRICASTALKING_API_KEY", "")
+AFRICASTALKING_SENDER_ID = _env("AFRICASTALKING_SENDER_ID", "")
+AFRICASTALKING_SMS_TIMEOUT = int(_env("AFRICASTALKING_SMS_TIMEOUT", "20"))
 
 CORS_ALLOWED_ORIGINS = _csv_env("DJANGO_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 CORS_ALLOW_CREDENTIALS = True

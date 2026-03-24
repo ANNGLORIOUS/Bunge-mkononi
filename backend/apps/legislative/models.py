@@ -66,7 +66,7 @@ class Bill(models.Model):
     category = models.CharField(max_length=32, choices=BillCategory.choices)
     date_introduced = models.DateField()
     is_hot = models.BooleanField(default=False)
-    full_text_url = models.URLField(blank=True)
+    full_text_url = models.URLField(blank=True, max_length=2048)
     key_points = models.JSONField(default=list, blank=True)
     timeline = models.JSONField(default=list, blank=True)
     subscriber_count = models.PositiveIntegerField(default=0)
@@ -77,6 +77,7 @@ class Bill(models.Model):
         help_text="MP, Senator, or Government who introduced the bill.",
     )
     parliament_url = models.URLField(
+        max_length=2048,
         blank=True,
         default="",
         help_text="Direct link to the bill on parliament.go.ke.",
