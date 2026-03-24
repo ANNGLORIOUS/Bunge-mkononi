@@ -11,7 +11,7 @@ Bunge Mkononi is a civic-tech platform designed to bridge the gap between the Ke
  (For Backend Devs)The frontend is currently built with Mock Data and is ready for API integration.FeatureBackend ExpectationAT IntegrationVotingPOST /api/votesUpdates signatureCountStatus ChangePATCH /api/bills/:idTriggers AT SMS to subscribersTrackingPOST /api/trackSubscribes phone number to updatesUSSD MenuCallback URLHandles *384*100# session logic
 
 ### 🛠️ Installation & SetupClone the repo
- :Bashgit clone https://github.com/your-username/bunge-mkononi.git
+Git clone https://[github.com/your-username/bunge-mkononi.git](https://github.com/ANNGLORIOUS/Bunge-mkononi)
 
 ### Install dependencies:Bashnpm install
 Run the development server:npm run dev
