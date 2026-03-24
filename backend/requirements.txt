@@ -2,6 +2,8 @@ Django>=6.0.3,<6.1
 psycopg[binary]>=3.2,<4.0
 djangorestframework>=3.16.1,<4.0
 django-cors-headers>=4.7,<5.0
+gunicorn>=22.0,<24.0
+whitenoise>=6.11,<7.0
 # Africa's Talking SMS broadcaster
 africastalking>=2.0.2,<3.0
 # Parliament scraper dependencies

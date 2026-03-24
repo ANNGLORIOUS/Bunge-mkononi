@@ -18,7 +18,9 @@ Run the development server:npm run dev
 Access Admin Panel:Navigate to /admin and sign in with a Django admin account for protected actions.
 
 ## 🐍 Django Backend
-The repo now includes a Django REST API in `backend/` backed by SQL storage. SQLite is the default for local development, and you can switch to PostgreSQL later by changing the `DJANGO_DB_*` variables in `backend/.env.example`.
+The repo now includes a Django REST API in `backend/` backed by SQL storage. PostgreSQL is the default database for local development, and you can override the `DJANGO_DB_*` variables in `backend/.env.example` if needed.
+
+The backend also includes a Render Blueprint at `render.yaml` so you can provision the API and a matching Postgres database from the same repo.
 
 ## 🌐 Frontend to Backend Wiring
 The Next.js frontend now reads live data from the Django API.
@@ -42,14 +44,26 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api
 
 ### Quick start
 1. `cd backend`
-2. `python3 -m venv .venv`
-3. `source .venv/bin/activate`
-4. `pip install -r requirements.txt`
-5. `python manage.py migrate`
-6. `python manage.py scrape_bills`
-7. `python manage.py runserver 8000`
+2. Make sure PostgreSQL is running and create the database once:
+   ```bash
+   createdb bunge_mkononi
+   ```
+3. `python3 -m venv .venv`
+4. `source .venv/bin/activate`
+5. `pip install -r requirements.txt`
+6. `python manage.py migrate`
+7. `python manage.py scrape_bills`
+8. `python manage.py runserver 8000`
 
 If the scraper returns no bills on your first run, the site will simply stay empty until parliament data is available.
+
+### Render deploy
+1. Push the repo to GitHub, then create a new Render Blueprint from `render.yaml`.
+2. Render will create the backend service plus a Postgres database.
+3. The app bootstraps migrations and static file collection on Render startup, so even a manually created service with the default Gunicorn start command can come up cleanly.
+4. Add your frontend domain later by setting `DJANGO_CORS_ALLOWED_ORIGINS` and `DJANGO_CSRF_TRUSTED_ORIGINS` on the Render service if the UI is hosted elsewhere.
+
+Render's free Postgres plan expires after 30 days, so upgrade the database if you want to keep data long term.
 
 ### Africa's Talking SMS
 Set these in `backend/.env` or your shell before using the admin broadcast button:

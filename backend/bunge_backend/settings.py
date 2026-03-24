@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -15,6 +16,67 @@ def _csv_env(name: str, default: str = "") -> list[str]:
 def _env(name: str, default: str) -> str:
     value = os.getenv(name)
     return default if value in {None, ""} else value
+
+
+def _bool_env(name: str, default: str) -> bool:
+    return _env(name, default).lower() in {"1", "true", "yes", "on"}
+
+
+def _append_unique(values: list[str], *entries: str) -> list[str]:
+    for entry in entries:
+        if entry and entry not in values:
+            values.append(entry)
+    return values
+
+
+def _database_from_url(database_url: str) -> dict[str, str]:
+    parsed = urlparse(database_url)
+    scheme = parsed.scheme.lower()
+
+    if scheme in {"postgres", "postgresql", "postgresql+psycopg", "postgresql+psycopg2"}:
+        engine = "django.db.backends.postgresql"
+    elif scheme == "sqlite":
+        engine = "django.db.backends.sqlite3"
+    else:
+        engine = scheme
+
+    if engine == "django.db.backends.sqlite3":
+        name = parsed.path or ":memory:"
+        if name == "/:memory:":
+            name = ":memory:"
+        return {"ENGINE": engine, "NAME": name}
+
+    return {
+        "ENGINE": engine,
+        "NAME": parsed.path.lstrip("/"),
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or ""),
+    }
+
+
+def _database_config() -> dict[str, str]:
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        return _database_from_url(database_url)
+
+    db_engine = _env("DJANGO_DB_ENGINE", "django.db.backends.postgresql")
+    db_name = _env(
+        "DJANGO_DB_NAME",
+        "bunge_mkononi" if db_engine.endswith("postgresql") else str(BASE_DIR / "db.sqlite3"),
+    )
+    if db_engine.endswith("sqlite3") and not os.path.isabs(db_name):
+        db_name = str(BASE_DIR / db_name)
+
+    return {
+        "ENGINE": db_engine,
+        "NAME": db_name,
+        "USER": _env("DJANGO_DB_USER", "postgres" if db_engine.endswith("postgresql") else ""),
+        "PASSWORD": _env("DJANGO_DB_PASSWORD", ""),
+        "HOST": _env("DJANGO_DB_HOST", "localhost" if db_engine.endswith("postgresql") else ""),
+        "PORT": _env("DJANGO_DB_PORT", "5432" if db_engine.endswith("postgresql") else ""),
+    }
 
 
 def _load_env_file(path: Path) -> None:
@@ -37,8 +99,14 @@ _load_env_file(BASE_DIR / ".env")
 
 
 SECRET_KEY = _env("DJANGO_SECRET_KEY", "django-insecure-change-me-for-local-dev")
-DEBUG = _env("DJANGO_DEBUG", "1").lower() in {"1", "true", "yes", "on"}
+_is_render = os.getenv("RENDER", "").lower() == "true" or bool(os.getenv("RENDER_EXTERNAL_HOSTNAME"))
+DEBUG = _bool_env("DJANGO_DEBUG", "0" if _is_render else "1")
 ALLOWED_HOSTS = _csv_env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+if _is_render:
+    _append_unique(ALLOWED_HOSTS, ".onrender.com")
+render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+if render_hostname:
+    _append_unique(ALLOWED_HOSTS, render_hostname)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -53,8 +121,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -83,29 +152,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "bunge_backend.wsgi.application"
 ASGI_APPLICATION = "bunge_backend.asgi.application"
 
-db_engine = _env("DJANGO_DB_ENGINE", "django.db.backends.postgresql")
-db_name = _env(
-    "DJANGO_DB_NAME",
-    "bunge_mkononi" if db_engine.endswith("postgresql") else str(BASE_DIR / "db.sqlite3"),
-)
-if db_engine.endswith("sqlite3") and not os.path.isabs(db_name):
-    db_name = str(BASE_DIR / db_name)
-
-db_user = _env("DJANGO_DB_USER", "postgres" if db_engine.endswith("postgresql") else "")
-db_password = _env("DJANGO_DB_PASSWORD", "")
-db_host = _env("DJANGO_DB_HOST", "localhost" if db_engine.endswith("postgresql") else "")
-db_port = _env("DJANGO_DB_PORT", "5432" if db_engine.endswith("postgresql") else "")
-
-DATABASES = {
-    "default": {
-        "ENGINE": db_engine,
-        "NAME": db_name,
-        "USER": db_user,
-        "PASSWORD": db_password,
-        "HOST": db_host,
-        "PORT": db_port,
-    }
-}
+DATABASES = {"default": _database_config()}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -119,10 +166,18 @@ TIME_ZONE = "Africa/Nairobi"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if _is_render else None
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -133,7 +188,13 @@ AFRICASTALKING_SMS_TIMEOUT = int(_env("AFRICASTALKING_SMS_TIMEOUT", "20"))
 
 CORS_ALLOWED_ORIGINS = _csv_env("DJANGO_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+CSRF_TRUSTED_ORIGINS = _csv_env("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+if not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
+if _is_render:
+    _append_unique(CSRF_TRUSTED_ORIGINS, "https://*.onrender.com")
+if render_hostname:
+    _append_unique(CSRF_TRUSTED_ORIGINS, f"https://{render_hostname}")
 
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
