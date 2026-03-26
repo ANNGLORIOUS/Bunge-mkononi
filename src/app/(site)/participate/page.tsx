@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowUpRight, PhoneCall, ShieldCheck, TrendingUp } from 'lucide-react';
 import ParticipationHub from '@/components/ParticipationHub';
 import RegionalImpact from '@/components/RegionalImpact';
+import SubscriptionWorkbench from '@/components/SubscriptionWorkbench';
 import { getDashboard } from '@/lib/api';
 import { CountyStat } from '@/types';
 
@@ -191,6 +192,12 @@ export default async function ParticipatePage() {
             </div>
           </section>
         </aside>
+      </section>
+
+      <section className="mx-auto mt-8 max-w-7xl px-4 sm:px-6">
+        <SubscriptionWorkbench
+          featuredBill={featuredBill ? { id: featuredBill.id, title: featuredBill.title } : null}
+        />
       </section>
     </main>
   );

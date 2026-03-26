@@ -14,10 +14,28 @@ from apps.legislative.representative_scrapers import (
     scrape_representatives as scrape_member_representatives,
 )
 
-from .models import Bill, BillStatus, Representative, RepresentativeVote, VoteChoice
-from .models import Subscription, SubscriptionScope, SubscriptionStatus
+from .models import (
+    Bill,
+    BillStatus,
+    MessageLanguage,
+    Representative,
+    RepresentativeVote,
+    Subscription,
+    SubscriptionFrequency,
+    SubscriptionScope,
+    SubscriptionStatus,
+    VoteChoice,
+)
 from .services import process_bill_document
-from .views import BillViewSet, BillVoteSummaryAPIView, BillVotesAPIView, RepresentativeViewSet, SmsInboundAPIView, UssdCallbackAPIView
+from .views import (
+    BillViewSet,
+    BillVoteSummaryAPIView,
+    BillVotesAPIView,
+    RepresentativeViewSet,
+    SmsInboundAPIView,
+    SubscriptionViewSet,
+    UssdCallbackAPIView,
+)
 from .scrapers import upsert_bills
 from .services import create_subscription, update_bill_status
 
@@ -242,6 +260,108 @@ class BillSearchTests(TestCase):
                 self.assertEqual(response.status_code, 200)
                 result_ids = [item["id"] for item in data["results"]]
                 self.assertIn(self.bill.pk, result_ids)
+
+
+class PublicSubscriptionManagementApiTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.bill = Bill.objects.create(
+            id="watch-bill",
+            title="County Watch Bill",
+            summary="A bill used to test public subscription lookup and updates.",
+            status=BillStatus.COMMITTEE,
+            category="Environment",
+            sponsor="Hon. Alice Wanjiku",
+            date_introduced=date(2026, 2, 15),
+            is_hot=True,
+        )
+        self.phone_number = "+254700000000"
+
+        self.bill_subscription, _, _ = create_subscription(
+            self.bill,
+            self.phone_number,
+            "sms",
+            language=MessageLanguage.EN,
+            cadence=SubscriptionFrequency.INSTANT,
+        )
+        self.county_subscription, _, _ = create_subscription(
+            None,
+            self.phone_number,
+            "sms",
+            scope=SubscriptionScope.COUNTY,
+            target_value="Nairobi",
+            language=MessageLanguage.EN,
+            cadence=SubscriptionFrequency.DAILY,
+            status=SubscriptionStatus.PAUSED,
+        )
+        self.unsubscribed_subscription, _, _ = create_subscription(
+            None,
+            self.phone_number,
+            "sms",
+            scope=SubscriptionScope.SPONSOR,
+            target_value="Hon. Alice Wanjiku",
+            language=MessageLanguage.EN,
+            cadence=SubscriptionFrequency.WEEKLY,
+            status=SubscriptionStatus.UNSUBSCRIBED,
+        )
+
+    def test_lookup_returns_active_and_paused_subscriptions_for_phone(self):
+        request = self.factory.post(
+            "/api/subscriptions/lookup/",
+            {"phoneNumber": "0700 000 000"},
+            format="json",
+        )
+
+        response = SubscriptionViewSet.as_view({"post": "lookup"})(request)
+        data = response_data(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["phoneNumber"], self.phone_number)
+        self.assertEqual(data["count"], 2)
+        returned_ids = {item["id"] for item in data["subscriptions"]}
+        self.assertIn(self.bill_subscription.pk, returned_ids)
+        self.assertIn(self.county_subscription.pk, returned_ids)
+        self.assertNotIn(self.unsubscribed_subscription.pk, returned_ids)
+
+    def test_manage_updates_status_language_and_cadence_for_matching_phone(self):
+        request = self.factory.post(
+            f"/api/subscriptions/{self.bill_subscription.pk}/manage/",
+            {
+                "phoneNumber": self.phone_number,
+                "status": SubscriptionStatus.PAUSED,
+                "language": MessageLanguage.SW,
+                "cadence": SubscriptionFrequency.WEEKLY,
+            },
+            format="json",
+        )
+
+        response = SubscriptionViewSet.as_view({"post": "manage"})(request, pk=self.bill_subscription.pk)
+        data = response_data(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.bill_subscription.refresh_from_db()
+        self.assertEqual(self.bill_subscription.status, SubscriptionStatus.PAUSED)
+        self.assertEqual(self.bill_subscription.language, MessageLanguage.SW)
+        self.assertEqual(self.bill_subscription.cadence, SubscriptionFrequency.WEEKLY)
+        self.assertEqual(data["status"], SubscriptionStatus.PAUSED)
+        self.assertEqual(data["language"], MessageLanguage.SW)
+        self.assertEqual(data["cadence"], SubscriptionFrequency.WEEKLY)
+
+    def test_manage_rejects_mismatched_phone_numbers(self):
+        request = self.factory.post(
+            f"/api/subscriptions/{self.bill_subscription.pk}/manage/",
+            {
+                "phoneNumber": "+254711111111",
+                "status": SubscriptionStatus.UNSUBSCRIBED,
+            },
+            format="json",
+        )
+
+        response = SubscriptionViewSet.as_view({"post": "manage"})(request, pk=self.bill_subscription.pk)
+
+        self.assertEqual(response.status_code, 403)
+        self.bill_subscription.refresh_from_db()
+        self.assertEqual(self.bill_subscription.status, SubscriptionStatus.ACTIVE)
 
 
 class RepresentativeVotingApiTests(TestCase):

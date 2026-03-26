@@ -158,6 +158,24 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         return obj.target_value or obj.scope
 
 
+class SubscriptionLookupSerializer(serializers.Serializer):
+    phoneNumber = serializers.CharField(source="phone_number")
+
+
+class PublicSubscriptionManageSerializer(serializers.Serializer):
+    phoneNumber = serializers.CharField(source="phone_number")
+    language = serializers.ChoiceField(choices=MessageLanguage.choices, required=False)
+    cadence = serializers.ChoiceField(choices=SubscriptionFrequency.choices, required=False)
+    status = serializers.ChoiceField(choices=SubscriptionStatus.choices, required=False)
+
+    def validate(self, attrs: dict) -> dict:
+        if not any(key in attrs for key in ("language", "cadence", "status")):
+            raise serializers.ValidationError(
+                "Provide at least one of status, language, or cadence."
+            )
+        return attrs
+
+
 class PollResponseSerializer(serializers.ModelSerializer):
     billId = serializers.PrimaryKeyRelatedField(source="bill", queryset=Bill.objects.all())
     phoneNumber = serializers.CharField(source="phone_number", required=False, allow_blank=True)
