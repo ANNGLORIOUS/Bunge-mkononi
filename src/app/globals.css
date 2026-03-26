@@ -1,18 +1,30 @@
 @import "tailwindcss";
 
 :root {
-  --font-site-sans: "Inter", "Segoe UI", system-ui, sans-serif;
-  --font-site-mono: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-  --background: #f7f9fc;
+  --font-site-sans: var(--font-inter), "Segoe UI", system-ui, sans-serif;
+  --font-site-mono: var(--font-jetbrains-mono), "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+  --background: #f9fafb;
   --foreground: #0f172a;
   --surface: rgba(255, 255, 255, 0.96);
   --surface-strong: #ffffff;
-  --line: rgba(15, 23, 42, 0.08);
-  --brand: #2563eb;
-  --brand-strong: #1e40af;
+  --line: rgba(15, 23, 42, 0.05);
+  --line-strong: rgba(15, 23, 42, 0.09);
+  --brand: #1d4ed8;
+  --brand-strong: #1e3a8a;
   --brand-soft: #dbeafe;
-  --accent: #0f766e;
-  --accent-soft: #ccfbf1;
+  --accent: #334155;
+  --accent-soft: #e2e8f0;
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --warning: #b45309;
+  --warning-soft: #fef3c7;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
+  --radius-sm: 0.75rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 0.75rem;
+  --shadow-soft: 0 12px 32px -20px rgba(15, 23, 42, 0.16);
+  --shadow-lift: 0 18px 40px -24px rgba(15, 23, 42, 0.2);
 }
 
 @theme inline {
@@ -26,6 +38,12 @@
   --color-brand-soft: var(--brand-soft);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
   --font-sans: var(--font-site-sans);
   --font-mono: var(--font-site-mono);
 }
@@ -37,18 +55,109 @@ html {
 body {
   background-color: var(--background);
   background-image:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.09), transparent 26%),
-    radial-gradient(circle at top right, rgba(15, 118, 110, 0.08), transparent 24%),
-    linear-gradient(180deg, #fbfcfe 0%, #f7f9fc 48%, #eef4fb 100%);
+    radial-gradient(circle at top left, rgba(29, 78, 216, 0.05), transparent 28%),
+    radial-gradient(circle at top right, rgba(148, 163, 184, 0.08), transparent 26%),
+    linear-gradient(180deg, #fcfdff 0%, #f9fafb 55%, #f3f6fa 100%);
   color: var(--foreground);
   font-family: var(--font-site-sans);
+  line-height: 1.6;
 }
 
 * {
   box-sizing: border-box;
 }
 
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.02em;
+}
+
+code,
+kbd,
+pre {
+  font-family: var(--font-site-mono);
+}
+
 ::selection {
-  background: rgba(15, 118, 110, 0.18);
+  background: rgba(29, 78, 216, 0.16);
   color: var(--brand-strong);
+}
+
+@layer components {
+  .surface-card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .surface-panel {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: #ffffff;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .eyebrow {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+  }
+
+  .metric-mono {
+    font-family: var(--font-site-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+  }
+
+  .live-dot {
+    position: relative;
+    display: inline-flex;
+    height: 0.625rem;
+    width: 0.625rem;
+    border-radius: 9999px;
+    background: var(--success);
+  }
+
+  .live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--success) 35%, transparent);
+    animation: live-pulse 1.8s ease-out infinite;
+  }
+
+  .skeleton-line {
+    border-radius: 9999px;
+    background: linear-gradient(90deg, rgba(226, 232, 240, 0.75), rgba(241, 245, 249, 1), rgba(226, 232, 240, 0.75));
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes live-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  70% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
 }
