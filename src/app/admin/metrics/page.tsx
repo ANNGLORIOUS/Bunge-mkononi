@@ -174,7 +174,7 @@ export default function AdminMetricsPage() {
           </div>
         )}
 
-        <section className="mb-8 rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-6 shadow-2xl">
+        <section className="mb-8 rounded-3xl border border-slate-800 bg-linear-to-br from-slate-900 to-slate-950 p-6 shadow-2xl">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl">
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.25em] text-emerald-300">
@@ -188,7 +188,7 @@ export default function AdminMetricsPage() {
               </p>
             </div>
 
-            <div className="grid min-w-[260px] grid-cols-2 gap-3">
+            <div className="grid min-w-65 grid-cols-2 gap-3">
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
                 <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Subscriptions</p>
                 <p className="mt-2 text-2xl font-black text-white">{formatNumber(metrics?.subscriptionMetrics.sms ?? 0)}</p>

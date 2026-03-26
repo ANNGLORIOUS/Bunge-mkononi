@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowUpRight, PhoneCall, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react';
+import { ArrowUpRight, PhoneCall, ShieldCheck, TrendingUp } from 'lucide-react';
 import ParticipationHub from '@/components/ParticipationHub';
 import RegionalImpact from '@/components/RegionalImpact';
 import { getDashboard } from '@/lib/api';
@@ -36,7 +36,7 @@ export default async function ParticipatePage() {
     <main className="pb-20">
       {dashboardError && (
         <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
-          <div className="rounded-[1.5rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
             {dashboardError}
           </div>
         </div>
@@ -47,10 +47,7 @@ export default async function ParticipatePage() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(15,118,110,0.08),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(199,111,61,0.12),transparent_26%)]" />
           <div className="relative grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-end">
             <div className="max-w-2xl">
-              <span className="inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand-soft px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-brand-strong">
-                <Sparkles size={12} />
-                Citizen participation
-              </span>
+              
               <h1 className="mt-5 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
                 Take action from any phone, not just a smartphone.
               </h1>
@@ -76,20 +73,20 @@ export default async function ParticipatePage() {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:w-[340px]">
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="grid gap-3 sm:grid-cols-2 lg:w-85">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">USSD sessions</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(stats?.ussdSessions ?? 0)}</p>
               </div>
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">SMS alerts</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(stats?.smsAlertsSent ?? 0)}</p>
               </div>
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">Active bills</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(stats?.activeBills ?? 0)}</p>
               </div>
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">Total signatures</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
                   {formatNumber(stats?.totalSignatures ?? 0)}
@@ -109,7 +106,7 @@ export default async function ParticipatePage() {
             initialPolling={featuredBill.polling}
           />
         ) : (
-          <div className="rounded-[2rem] border border-slate-200 bg-surface/95 p-6 shadow-sm">
+          <div className="rounded-4xl border border-slate-200 bg-surface/95 p-6 shadow-sm">
             <p className="text-lg font-semibold text-foreground">No featured bill is available yet.</p>
             <p className="mt-2 text-sm text-slate-500">
               Once the dashboard has a featured bill, this page will show live polling and subscription tools.
@@ -120,7 +117,7 @@ export default async function ParticipatePage() {
         <aside className="space-y-6">
           {countyData.length > 0 && <RegionalImpact counties={countyData} />}
 
-          <section className="rounded-[2rem] border border-slate-200 bg-surface/95 p-6 shadow-sm">
+          <section className="rounded-4xl border border-slate-200 bg-surface/95 p-6 shadow-sm">
             <div className="flex items-center gap-2">
               <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
                 <ShieldCheck size={16} />
@@ -131,19 +128,19 @@ export default async function ParticipatePage() {
               </div>
             </div>
             <div className="mt-5 space-y-4">
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-slate-500">1. Subscribe</p>
                 <p className="mt-2 text-sm text-slate-600">
                   Add your phone number to receive updates when a bill changes.
                 </p>
               </div>
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-slate-500">2. Vote</p>
                 <p className="mt-2 text-sm text-slate-600">
                   Share support, opposition, or a request for more information.
                 </p>
               </div>
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-slate-500">3. Follow the bill</p>
                 <p className="mt-2 text-sm text-slate-600">
                   Each bill gets its own route family for overview, documents, votes, and participation.
@@ -152,7 +149,7 @@ export default async function ParticipatePage() {
             </div>
           </section>
 
-          <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center gap-2">
               <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
                 <TrendingUp size={16} />
@@ -169,7 +166,7 @@ export default async function ParticipatePage() {
                   const progress = petition.goal ? (petition.signatures / petition.goal) * 100 : petition.progressPercent;
 
                   return (
-                    <div key={petition.billId} className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+                    <div key={petition.billId} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <p className="text-sm font-semibold text-slate-900">{petition.title}</p>
                         <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-brand-strong">
@@ -179,7 +176,7 @@ export default async function ParticipatePage() {
                       <p className="mt-2 text-xs text-slate-600">{formatNumber(petition.signatures)} signatures</p>
                       <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-brand via-accent to-sky-400"
+                          className="h-full rounded-full bg-linear-to-r from-brand via-accent to-sky-400"
                           style={{ width: `${Math.min(progress, 100)}%` }}
                         />
                       </div>
@@ -187,7 +184,7 @@ export default async function ParticipatePage() {
                   );
                 })
               ) : (
-                <p className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                <p className="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                   Trending petitions will appear here once live data is available.
                 </p>
               )}
