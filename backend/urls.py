@@ -20,6 +20,7 @@ from .views import (
     BillVoteSummaryAPIView,
     CountyStatViewSet,
     DashboardAPIView,
+    OutboundMessageViewSet,
     HealthCheckAPIView,
     PetitionViewSet,
     PollResponseViewSet,
@@ -32,6 +33,7 @@ from .views import (
     SmsInboundAPIView,
     SubscriptionViewSet,
     SystemLogViewSet,
+    WebhookReceiptViewSet,
     UssdCallbackAPIView,
 )
 
@@ -42,6 +44,8 @@ router.register("representatives", RepresentativeViewSet, basename="representati
 router.register("counties", CountyStatViewSet, basename="counties")
 router.register("votes", PollResponseViewSet, basename="votes")
 router.register("subscriptions", SubscriptionViewSet, basename="subscriptions")
+router.register("outbound-messages", OutboundMessageViewSet, basename="outbound-messages")
+router.register("webhook-receipts", WebhookReceiptViewSet, basename="webhook-receipts")
 router.register("logs", SystemLogViewSet, basename="logs")
 
 urlpatterns = [

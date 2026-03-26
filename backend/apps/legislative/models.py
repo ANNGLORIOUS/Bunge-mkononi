@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 
 class BillStatus(models.TextChoices):
@@ -68,6 +69,73 @@ class LogEventType(models.TextChoices):
     VOTE = "vote", "Vote"
     SYSTEM = "system", "System"
     SCRAPE = "scrape", "Scrape"
+    MESSAGE_OUTBOUND = "message_outbound", "Message outbound"
+    CONSENT = "consent", "Consent"
+    DIGEST = "digest", "Digest"
+    WEBHOOK = "webhook", "Webhook"
+
+
+class SubscriptionScope(models.TextChoices):
+    BILL = "bill", "Bill"
+    CATEGORY = "category", "Category"
+    COUNTY = "county", "County"
+    SPONSOR = "sponsor", "Sponsor"
+    ALL = "all", "All bills"
+
+
+class SubscriptionStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    PAUSED = "paused", "Paused"
+    UNSUBSCRIBED = "unsubscribed", "Unsubscribed"
+
+
+class SubscriptionFrequency(models.TextChoices):
+    INSTANT = "instant", "Instant"
+    DAILY = "daily", "Daily"
+    WEEKLY = "weekly", "Weekly"
+    MILESTONE = "milestone", "Milestone"
+
+
+class MessageLanguage(models.TextChoices):
+    EN = "en", "English"
+    SW = "sw", "Swahili"
+
+
+class SubscriptionSource(models.TextChoices):
+    SMS = "sms", "SMS"
+    USSD = "ussd", "USSD"
+    ADMIN = "admin", "Admin"
+    API = "api", "API"
+
+
+class OutboundMessageStatus(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    SENDING = "sending", "Sending"
+    SENT = "sent", "Sent"
+    FAILED = "failed", "Failed"
+    SKIPPED = "skipped", "Skipped"
+
+
+class OutboundMessageType(models.TextChoices):
+    CONFIRMATION = "confirmation", "Confirmation"
+    BROADCAST = "broadcast", "Broadcast"
+    DIGEST = "digest", "Digest"
+    MILESTONE = "milestone", "Milestone"
+    REPLY = "reply", "Reply"
+    REMINDER = "reminder", "Reminder"
+
+
+class WebhookEventType(models.TextChoices):
+    SMS_INBOUND = "sms_inbound", "SMS inbound"
+    SMS_DELIVERY_REPORT = "sms_delivery_report", "SMS delivery report"
+    USSD = "ussd", "USSD"
+
+
+class WebhookEventStatus(models.TextChoices):
+    PROCESSED = "processed", "Processed"
+    DUPLICATE = "duplicate", "Duplicate"
+    FAILED = "failed", "Failed"
+    IGNORED = "ignored", "Ignored"
 
 
 class Bill(models.Model):
@@ -204,14 +272,98 @@ class Subscription(models.Model):
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE, related_name="subscriptions", null=True, blank=True)
     phone_number = models.CharField(max_length=32)
     channel = models.CharField(max_length=16, choices=SubscriptionChannel.choices, default=SubscriptionChannel.SMS)
+    scope = models.CharField(max_length=16, choices=SubscriptionScope.choices, default=SubscriptionScope.BILL)
+    target_value = models.CharField(max_length=255, blank=True, default="")
+    language = models.CharField(max_length=8, choices=MessageLanguage.choices, default=MessageLanguage.EN)
+    cadence = models.CharField(max_length=16, choices=SubscriptionFrequency.choices, default=SubscriptionFrequency.INSTANT)
+    status = models.CharField(max_length=16, choices=SubscriptionStatus.choices, default=SubscriptionStatus.ACTIVE)
+    pause_until = models.DateTimeField(null=True, blank=True)
+    consent_source = models.CharField(max_length=16, choices=SubscriptionSource.choices, default=SubscriptionSource.API)
+    consented_at = models.DateTimeField(default=timezone.now)
+    last_notified_at = models.DateTimeField(null=True, blank=True)
+    last_digest_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["phone_number", "channel", "scope", "bill", "target_value"],
+                name="unique_subscription_target_per_phone_channel",
+            ),
+        ]
 
     def __str__(self) -> str:
-        bill_identifier = self.bill.pk if self.bill else "all-bills"
-        return f"{self.phone_number} -> {bill_identifier}"
+        if self.scope == SubscriptionScope.BILL and self.bill_id:
+            target = self.bill.pk
+        elif self.scope == SubscriptionScope.ALL:
+            target = "all-bills"
+        else:
+            target = self.target_value or self.scope
+        return f"{self.phone_number} -> {target}"
+
+
+class OutboundMessage(models.Model):
+    bill = models.ForeignKey(Bill, on_delete=models.SET_NULL, null=True, blank=True, related_name="outbound_messages")
+    subscription = models.ForeignKey(
+        Subscription,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="outbound_messages",
+    )
+    recipient_phone_number = models.CharField(max_length=32)
+    message = models.TextField()
+    message_type = models.CharField(max_length=16, choices=OutboundMessageType.choices)
+    language = models.CharField(max_length=8, choices=MessageLanguage.choices, default=MessageLanguage.EN)
+    status = models.CharField(max_length=16, choices=OutboundMessageStatus.choices, default=OutboundMessageStatus.QUEUED)
+    provider = models.CharField(max_length=32, default="africastalking")
+    provider_message_id = models.CharField(max_length=128, blank=True, default="")
+    dedupe_key = models.CharField(max_length=255, unique=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    scheduled_for = models.DateTimeField(default=timezone.now)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "scheduled_for"]),
+            models.Index(fields=["recipient_phone_number"]),
+            models.Index(fields=["message_type"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.message_type}: {self.recipient_phone_number}"
+
+
+class WebhookReceipt(models.Model):
+    provider = models.CharField(max_length=32, default="africastalking")
+    event_type = models.CharField(max_length=32, choices=WebhookEventType.choices)
+    external_id = models.CharField(max_length=255)
+    dedupe_key = models.CharField(max_length=255, unique=True)
+    phone_number = models.CharField(max_length=32, blank=True, default="")
+    raw_phone_number = models.CharField(max_length=32, blank=True, default="")
+    payload = models.JSONField(default=dict, blank=True)
+    response_text = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=16, choices=WebhookEventStatus.choices, default=WebhookEventStatus.PROCESSED)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["provider", "event_type"]),
+            models.Index(fields=["external_id"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.event_type}: {self.external_id}"
 
 
 class SystemLog(models.Model):

@@ -3,6 +3,10 @@ from rest_framework import serializers
 from .models import (
     Bill,
     CountyStat,
+    MessageLanguage,
+    OutboundMessage,
+    OutboundMessageStatus,
+    OutboundMessageType,
     Petition,
     PollChoice,
     PollResponse,
@@ -10,7 +14,14 @@ from .models import (
     RepresentativeVote,
     Subscription,
     SubscriptionChannel,
+    SubscriptionFrequency,
+    SubscriptionScope,
+    SubscriptionSource,
+    SubscriptionStatus,
     SystemLog,
+    WebhookEventStatus,
+    WebhookEventType,
+    WebhookReceipt,
 )
 
 
@@ -101,13 +112,50 @@ class CountyStatSerializer(serializers.ModelSerializer):
 
 class SubscriptionSerializer(serializers.ModelSerializer):
     billId = serializers.PrimaryKeyRelatedField(source="bill", queryset=Bill.objects.all(), required=False, allow_null=True)
+    billTitle = serializers.CharField(source="bill.title", read_only=True)
     phoneNumber = serializers.CharField(source="phone_number")
+    scope = serializers.ChoiceField(choices=SubscriptionScope.choices, required=False)
+    targetValue = serializers.CharField(source="target_value", required=False, allow_blank=True)
+    target = serializers.SerializerMethodField()
+    language = serializers.ChoiceField(choices=MessageLanguage.choices, required=False)
+    cadence = serializers.ChoiceField(choices=SubscriptionFrequency.choices, required=False)
+    status = serializers.ChoiceField(choices=SubscriptionStatus.choices, required=False)
+    pauseUntil = serializers.DateTimeField(source="pause_until", read_only=True)
+    consentSource = serializers.ChoiceField(source="consent_source", choices=SubscriptionSource.choices, read_only=True)
+    consentedAt = serializers.DateTimeField(source="consented_at", read_only=True)
+    lastNotifiedAt = serializers.DateTimeField(source="last_notified_at", read_only=True)
+    lastDigestAt = serializers.DateTimeField(source="last_digest_at", read_only=True)
     createdAt = serializers.DateTimeField(source="created_at", read_only=True)
     channel = serializers.ChoiceField(choices=SubscriptionChannel.choices, required=False)
 
     class Meta:
         model = Subscription
-        fields = ["id", "billId", "phoneNumber", "channel", "createdAt"]
+        fields = [
+            "id",
+            "billId",
+            "billTitle",
+            "phoneNumber",
+            "channel",
+            "scope",
+            "targetValue",
+            "target",
+            "language",
+            "cadence",
+            "status",
+            "pauseUntil",
+            "consentSource",
+            "consentedAt",
+            "lastNotifiedAt",
+            "lastDigestAt",
+            "createdAt",
+        ]
+
+    def get_target(self, obj: Subscription) -> str:
+        if obj.scope == SubscriptionScope.BILL and obj.bill:
+            return obj.bill.title
+        if obj.scope == SubscriptionScope.ALL:
+            return "all bills"
+        return obj.target_value or obj.scope
 
 
 class PollResponseSerializer(serializers.ModelSerializer):
@@ -215,6 +263,74 @@ class BillSerializer(serializers.ModelSerializer):
     def get_countyStats(self, obj: Bill):
         counties = obj.county_stats.all().order_by("-engagement_count", "county")
         return CountyStatSerializer(counties, many=True).data
+
+
+class OutboundMessageSerializer(serializers.ModelSerializer):
+    billId = serializers.CharField(source="bill_id", read_only=True)
+    subscriptionId = serializers.IntegerField(source="subscription_id", read_only=True)
+    recipientPhoneNumber = serializers.CharField(source="recipient_phone_number")
+    messageType = serializers.ChoiceField(source="message_type", choices=OutboundMessageType.choices)
+    providerMessageId = serializers.CharField(source="provider_message_id")
+    dedupeKey = serializers.CharField(source="dedupe_key")
+    scheduledFor = serializers.DateTimeField(source="scheduled_for", read_only=True)
+    sentAt = serializers.DateTimeField(source="sent_at", read_only=True)
+    attemptCount = serializers.IntegerField(source="attempt_count", read_only=True)
+    lastError = serializers.CharField(source="last_error", read_only=True)
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+
+    class Meta:
+        model = OutboundMessage
+        fields = [
+            "id",
+            "billId",
+            "subscriptionId",
+            "recipientPhoneNumber",
+            "message",
+            "messageType",
+            "language",
+            "status",
+            "provider",
+            "providerMessageId",
+            "dedupeKey",
+            "metadata",
+            "scheduledFor",
+            "sentAt",
+            "attemptCount",
+            "lastError",
+            "createdAt",
+            "updatedAt",
+        ]
+
+
+class WebhookReceiptSerializer(serializers.ModelSerializer):
+    eventType = serializers.ChoiceField(source="event_type", choices=WebhookEventType.choices)
+    externalId = serializers.CharField(source="external_id")
+    dedupeKey = serializers.CharField(source="dedupe_key")
+    phoneNumber = serializers.CharField(source="phone_number")
+    rawPhoneNumber = serializers.CharField(source="raw_phone_number")
+    responseText = serializers.CharField(source="response_text")
+    processedAt = serializers.DateTimeField(source="processed_at", read_only=True)
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+
+    class Meta:
+        model = WebhookReceipt
+        fields = [
+            "id",
+            "provider",
+            "eventType",
+            "externalId",
+            "dedupeKey",
+            "phoneNumber",
+            "rawPhoneNumber",
+            "payload",
+            "responseText",
+            "status",
+            "processedAt",
+            "createdAt",
+            "updatedAt",
+        ]
 
 
 class BillDetailSerializer(BillSerializer):

@@ -1,6 +1,17 @@
 from django.contrib import admin
 
-from .models import Bill, CountyStat, Petition, PollResponse, Representative, RepresentativeVote, Subscription, SystemLog
+from .models import (
+    Bill,
+    CountyStat,
+    OutboundMessage,
+    Petition,
+    PollResponse,
+    Representative,
+    RepresentativeVote,
+    Subscription,
+    SystemLog,
+    WebhookReceipt,
+)
 
 
 @admin.register(Bill)
@@ -61,9 +72,25 @@ class PollResponseAdmin(admin.ModelAdmin):
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
-    list_display = ("bill", "phone_number", "channel", "created_at")
-    list_filter = ("channel", "created_at")
-    search_fields = ("bill__title", "phone_number")
+    list_display = ("bill", "phone_number", "channel", "scope", "status", "language", "created_at")
+    list_filter = ("channel", "scope", "status", "language", "cadence", "created_at")
+    search_fields = ("bill__title", "phone_number", "target_value")
+
+
+@admin.register(OutboundMessage)
+class OutboundMessageAdmin(admin.ModelAdmin):
+    list_display = ("recipient_phone_number", "message_type", "status", "language", "provider_message_id", "scheduled_for", "created_at")
+    list_filter = ("message_type", "status", "language", "provider", "created_at")
+    search_fields = ("recipient_phone_number", "message", "provider_message_id", "dedupe_key")
+    ordering = ("-created_at",)
+
+
+@admin.register(WebhookReceipt)
+class WebhookReceiptAdmin(admin.ModelAdmin):
+    list_display = ("provider", "event_type", "external_id", "phone_number", "status", "processed_at", "created_at")
+    list_filter = ("provider", "event_type", "status", "created_at")
+    search_fields = ("external_id", "phone_number", "raw_phone_number", "dedupe_key")
+    ordering = ("-created_at",)
 
 
 @admin.register(SystemLog)

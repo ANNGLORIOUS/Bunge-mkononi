@@ -14,8 +14,9 @@ from apps.legislative.representative_scrapers import (
 )
 
 from .models import Bill, BillStatus, Representative, RepresentativeVote, VoteChoice
+from .models import Subscription, SubscriptionScope, SubscriptionStatus
 from .services import process_bill_document
-from .views import BillViewSet, BillVoteSummaryAPIView, BillVotesAPIView, RepresentativeViewSet, UssdCallbackAPIView
+from .views import BillViewSet, BillVoteSummaryAPIView, BillVotesAPIView, RepresentativeViewSet, SmsInboundAPIView, UssdCallbackAPIView
 from .scrapers import upsert_bills
 from .services import create_subscription, update_bill_status
 
@@ -422,3 +423,44 @@ class UssdMenuTests(TestCase):
         self.assertIn(bill.title, message)
         self.assertIn(f"STATUS {bill.id}", message)
         self.assertEqual(recipients, [subscription.phone_number])
+
+    def test_ussd_follow_all_bills_creates_watchlist_subscription(self):
+        request = self.factory.post("/api/ussd/", {"text": "3*5", "phoneNumber": "+254700000000"}, format="json")
+
+        with patch("apps.legislative.services.send_sms") as send_sms_mock:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = UssdCallbackAPIView.as_view()(request)
+
+        body = response.content.decode()
+        self.assertIn("SMS confirmation", body)
+        subscription = Subscription.objects.get(phone_number="+254700000000", scope=SubscriptionScope.ALL)
+        self.assertEqual(subscription.status, SubscriptionStatus.ACTIVE)
+        self.assertEqual(subscription.target_value, "")
+        send_sms_mock.assert_called_once()
+
+
+class SmsWebhookTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.bill = Bill.objects.create(
+            id="sms-bill",
+            title="SMS Bill",
+            summary="A bill used to test SMS webhook idempotency.",
+            status=BillStatus.FIRST_READING,
+            category="Finance",
+            date_introduced=date(2026, 4, 1),
+            is_hot=False,
+        )
+
+    def test_sms_inbound_webhook_is_idempotent(self):
+        payload = {"from": "+254700000000", "text": f"DOCUMENT {self.bill.pk}"}
+
+        first_request = self.factory.post("/api/sms/inbound/", payload, format="json")
+        second_request = self.factory.post("/api/sms/inbound/", payload, format="json")
+
+        first_response = SmsInboundAPIView.as_view()(first_request)
+        second_response = SmsInboundAPIView.as_view()(second_request)
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.content, second_response.content)
+        self.assertIn("Bill ID: sms-bill", first_response.content.decode())
