@@ -145,7 +145,7 @@ function TrendingSidebar({ items }: { items: TrendingPetition[] }) {
 function BillRowSkeleton() {
   return (
     <div className="px-6 py-6">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_240px_260px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_220px] 2xl:grid-cols-[minmax(0,1.7fr)_240px_260px]">
         <div className="space-y-4">
           <div className="flex gap-3">
             <div className="skeleton-line h-4 w-32" />
@@ -157,13 +157,13 @@ function BillRowSkeleton() {
           <div className="skeleton-line h-4 w-full" />
           <div className="skeleton-line h-4 w-5/6" />
         </div>
-        <div className="space-y-4">
+        <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 lg:col-span-2 2xl:col-span-1">
           <div className="skeleton-line h-4 w-16" />
           <div className="skeleton-line h-8 w-32" />
           <div className="skeleton-line h-4 w-28" />
           <div className="skeleton-line h-3 w-full" />
         </div>
-        <div className="space-y-3 xl:ml-auto xl:w-full">
+        <div className="space-y-3 lg:col-start-2 lg:row-start-1 2xl:col-start-auto 2xl:row-start-auto 2xl:ml-auto 2xl:w-full">
           <div className="skeleton-line h-11 w-40" />
           <div className="flex gap-2">
             <div className="skeleton-line h-10 w-10" />
@@ -508,7 +508,7 @@ export default function BillBrowser() {
               </div>
             </div>
 
-            <div className="hidden border-b border-slate-200 bg-slate-50/70 px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 xl:grid xl:grid-cols-[minmax(0,1.7fr)_240px_260px]">
+            <div className="hidden border-b border-slate-200 bg-slate-50/70 px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 2xl:grid 2xl:grid-cols-[minmax(0,1.7fr)_240px_260px]">
               <span>Bill Record</span>
               <span>Status & Progress</span>
               <span className="text-right">Actions</span>

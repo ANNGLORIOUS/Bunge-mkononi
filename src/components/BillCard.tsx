@@ -37,9 +37,9 @@ export default function BillCard({ bill, petition }: Props) {
 
   return (
     <article className="group px-6 py-6 transition-colors duration-200 hover:bg-slate-50/80">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_240px_260px] xl:items-start">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start 2xl:grid-cols-[minmax(0,1.7fr)_240px_260px]">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.18em] text-slate-500">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs uppercase tracking-[0.18em] text-slate-500">
             <span className="metric-mono">{formatDate(bill.dateIntroduced)}</span>
             <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" />
             <span className="metric-mono">Bill No. {billNumber}</span>
@@ -67,7 +67,7 @@ export default function BillCard({ bill, petition }: Props) {
           )}
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 lg:col-span-2 2xl:col-span-1">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Status</p>
             <span className={`mt-2 inline-flex rounded-xl px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${STATUS_STYLES[currentStage]}`}>
@@ -77,7 +77,7 @@ export default function BillCard({ bill, petition }: Props) {
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">House Progress</p>
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex items-center gap-2 sm:gap-3">
               {STAGES.map((stage, index) => {
                 const isComplete = index <= currentStageIndex;
                 const isCurrent = stage === currentStage;
@@ -96,23 +96,23 @@ export default function BillCard({ bill, petition }: Props) {
                 );
               })}
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] uppercase tracking-[0.16em] text-slate-500">
+            <div className="mt-3 flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.16em] text-slate-500">
               <span>{STAGES[0]}</span>
               <span className="text-right">{STAGES[STAGES.length - 1]}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 xl:items-end">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center lg:col-start-2 lg:row-start-1 lg:flex-col lg:items-stretch 2xl:col-start-auto 2xl:row-start-auto 2xl:items-end">
           <Link
             href={`/bills/${bill.id}`}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white transition hover:bg-brand-strong"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white transition hover:bg-brand-strong sm:min-w-[180px] lg:w-full 2xl:w-auto"
           >
             Open Bill Story
             <ArrowUpRight size={14} />
           </Link>
 
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             {pdfUrl && (
               <a
                 href={pdfUrl}
@@ -146,7 +146,7 @@ export default function BillCard({ bill, petition }: Props) {
               <ExternalLink size={14} />
             </a>
           ) : (
-            <span className="text-sm font-medium text-slate-400">Parliament source unavailable</span>
+            <span className="text-sm font-medium text-slate-400 lg:text-right">Parliament source unavailable</span>
           )}
         </div>
       </div>
