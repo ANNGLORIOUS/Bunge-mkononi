@@ -116,6 +116,7 @@ Set these in `backend/.env` or your shell before using messaging features:
 - `AFRICASTALKING_USERNAME`
 - `AFRICASTALKING_API_KEY`
 - `AFRICASTALKING_SENDER_ID`
+- `AFRICASTALKING_SHORT_CODE`
 - `AFRICASTALKING_SMS_TIMEOUT`
 
 ### SMS Features
@@ -147,6 +148,7 @@ Messaging behavior:
 - Broadcast SMS uses the bill's current status by default when no custom message is supplied.
 - Bill status changes automatically queue outbound alerts for matching instant and milestone subscribers, whether the change came from the admin UI or the scraper.
 - Inbound SMS processing is idempotent, so duplicate webhook deliveries reuse the stored response instead of creating duplicate side effects.
+- Inbound SMS replies are sent back out as audited `reply` outbound messages using the inbound `linkId` and your shortcode configuration.
 - USSD-created subscriptions queue a confirmation SMS automatically.
 
 ### USSD Features

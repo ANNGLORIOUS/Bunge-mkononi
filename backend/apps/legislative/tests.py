@@ -22,6 +22,7 @@ from .models import (
     MessageLanguage,
     OutboundMessage,
     OutboundMessageStatus,
+    OutboundMessageType,
     Representative,
     RepresentativeVote,
     Subscription,
@@ -592,7 +593,7 @@ class UssdMenuTests(CommitCallbacksMixin, TestCase):
         send_sms_mock.assert_called_once()
 
 
-class SmsWebhookTests(TestCase):
+class SmsWebhookTests(CommitCallbacksMixin, TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.bill = Bill.objects.create(
@@ -617,6 +618,45 @@ class SmsWebhookTests(TestCase):
         self.assertEqual(first_response.status_code, 200)
         self.assertEqual(first_response.content, second_response.content)
         self.assertIn("Bill ID: sms-bill", first_response.content.decode())
+
+    def test_sms_inbound_webhook_queues_and_dispatches_reply_message(self):
+        payload = {
+            "from": "+254700000000",
+            "text": f"STATUS {self.bill.pk}",
+            "messageId": "msg-123",
+            "linkId": "link-123",
+        }
+        reply_response = {
+            "SMSMessageData": {
+                "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+                "Recipients": [
+                    {
+                        "number": "+254700000000",
+                        "messageId": "ATPid-inbound-reply",
+                        "status": "Success",
+                        "statusCode": 101,
+                        "cost": "KES 0.8000",
+                    }
+                ],
+            }
+        }
+
+        request = self.factory.post("/api/sms/inbound/", payload, format="json")
+        with patch("apps.legislative.services.send_sms_reply", return_value=reply_response) as send_reply_mock:
+            with self.capture_on_commit_callbacks(execute=True):
+                response = SmsInboundAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        outbound = OutboundMessage.objects.get(message_type=OutboundMessageType.REPLY)
+        self.assertEqual(outbound.status, OutboundMessageStatus.ACCEPTED)
+        self.assertEqual(outbound.provider_message_id, "ATPid-inbound-reply")
+        self.assertEqual(outbound.metadata.get("linkId"), "link-123")
+        self.assertEqual(outbound.metadata.get("sourceCommand"), "status")
+        send_reply_mock.assert_called_once_with(
+            outbound.message,
+            [outbound.recipient_phone_number],
+            link_id="link-123",
+        )
 
 
 class OutboundMessageDispatchTests(TestCase):
@@ -707,6 +747,46 @@ class OutboundMessageDispatchTests(TestCase):
         self.assertIsNotNone(log)
         self.assertIn("rejected", str(log.message).lower())
         self.assertEqual(log.metadata.get("error"), outbound.last_error)
+
+    def test_reply_dispatch_uses_inbound_link_id(self):
+        outbound = queue_outbound_message(
+            recipient_phone_number="+254700000000",
+            message="Reply test message",
+            message_type=OutboundMessageType.REPLY,
+            language=MessageLanguage.EN,
+            bill=self.bill,
+            dedupe_parts=[self.bill.pk, "reply-link"],
+            metadata={"linkId": "reply-link"},
+            send_immediately=False,
+        )
+        response = {
+            "SMSMessageData": {
+                "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+                "Recipients": [
+                    {
+                        "number": outbound.recipient_phone_number,
+                        "messageId": "ATPid-reply",
+                        "status": "Success",
+                        "statusCode": 101,
+                        "cost": "KES 0.8000",
+                    }
+                ],
+            }
+        }
+
+        with patch("apps.legislative.services.send_sms_reply", return_value=response) as send_reply_mock:
+            with patch("apps.legislative.services.send_sms") as send_sms_mock:
+                dispatch_outbound_message(outbound.pk)
+
+        outbound.refresh_from_db()
+        self.assertEqual(outbound.status, OutboundMessageStatus.ACCEPTED)
+        self.assertEqual(outbound.provider_message_id, "ATPid-reply")
+        send_reply_mock.assert_called_once_with(
+            outbound.message,
+            [outbound.recipient_phone_number],
+            link_id="reply-link",
+        )
+        send_sms_mock.assert_not_called()
 
     def test_delivery_report_keeps_sent_pending_until_final_delivery(self):
         outbound = self._queue_message()

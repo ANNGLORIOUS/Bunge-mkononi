@@ -91,6 +91,7 @@ from .services import (
     create_poll_response,
     create_subscription,
     generate_due_digests,
+    queue_sms_reply,
     record_sms_delivery_report,
     record_sms_inbound_message,
     record_webhook_receipt,
@@ -966,6 +967,16 @@ class SmsInboundAPIView(APIView):
 
         result = record_sms_inbound_message(payload)
         response_message = str(result.get("response_message") or "Received.")
+        queue_sms_reply(
+            recipient_phone_number=phone_number,
+            message=response_message,
+            language=str(result.get("language") or MessageLanguage.EN),
+            bill=result.get("bill") if isinstance(result.get("bill"), Bill) else None,
+            subscription=result.get("subscription") if isinstance(result.get("subscription"), Subscription) else None,
+            link_id=link_id,
+            inbound_message_id=str(result.get("message_id") or message_id or ""),
+            source_command=str(result.get("action") or ""),
+        )
         receipt.response_text = response_message
         receipt.status = WebhookEventStatus.PROCESSED
         receipt.processed_at = timezone.now()

@@ -11,7 +11,13 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from .document_processing import PDFDocumentProcessingError, analyze_pdf_document, resolve_bill_pdf_url
-from .africastalking import AfricaTalkingConfigurationError, AfricaTalkingError, send_sms, summarize_sms_response
+from .africastalking import (
+    AfricaTalkingConfigurationError,
+    AfricaTalkingError,
+    send_sms,
+    send_sms_reply,
+    summarize_sms_response,
+)
 from .models import (
     Bill,
     CountyStat,
@@ -961,6 +967,42 @@ def queue_outbound_message(
     return outbound
 
 
+def queue_sms_reply(
+    *,
+    recipient_phone_number: str,
+    message: str,
+    language: str = MessageLanguage.EN,
+    bill: Bill | None = None,
+    subscription: Subscription | None = None,
+    link_id: str = "",
+    inbound_message_id: str = "",
+    source_command: str = "",
+) -> OutboundMessage | None:
+    normalized_phone = normalize_kenyan_phone_number(recipient_phone_number) or recipient_phone_number.strip()
+    body = str(message or "").strip()
+    if not normalized_phone or not body:
+        return None
+
+    dedupe_identity = link_id or inbound_message_id or body
+    metadata = {
+        "billId": bill.id if bill else None,
+        "subscriptionId": subscription.pk if subscription else None,
+        "linkId": str(link_id or "").strip(),
+        "inboundMessageId": str(inbound_message_id or "").strip(),
+        "sourceCommand": source_command,
+    }
+    return queue_outbound_message(
+        recipient_phone_number=normalized_phone,
+        message=body,
+        message_type=OutboundMessageType.REPLY,
+        language=language,
+        bill=bill,
+        subscription=subscription,
+        dedupe_parts=["reply", dedupe_identity],
+        metadata=metadata,
+    )
+
+
 def _outbound_metadata_snapshot(outbound: OutboundMessage) -> dict[str, object]:
     if isinstance(outbound.metadata, dict):
         return dict(outbound.metadata)
@@ -997,16 +1039,25 @@ def dispatch_outbound_message(message_id: int | str) -> OutboundMessage | None:
 
     subscription = outbound.subscription
     bill = outbound.bill
+    outbound_metadata = _outbound_metadata_snapshot(outbound)
+    reply_link_id = _stringify_provider_value(outbound_metadata.get("linkId"))
 
     try:
         outbound.status = OutboundMessageStatus.SENDING
         outbound.attempt_count += 1
         outbound.save(update_fields=["status", "attempt_count", "updated_at"])
-        response = send_sms(
-            outbound.message,
-            [outbound.recipient_phone_number],
-            enqueue=True,
-        )
+        if outbound.message_type == OutboundMessageType.REPLY and reply_link_id:
+            response = send_sms_reply(
+                outbound.message,
+                [outbound.recipient_phone_number],
+                link_id=reply_link_id,
+            )
+        else:
+            response = send_sms(
+                outbound.message,
+                [outbound.recipient_phone_number],
+                enqueue=True,
+            )
         summary = summarize_sms_response(response)
         recipient_details = summary.get("recipients", []) if isinstance(summary.get("recipients", []), list) else []
         first_recipient = recipient_details[0] if recipient_details and isinstance(recipient_details[0], dict) else {}
@@ -1016,7 +1067,7 @@ def dispatch_outbound_message(message_id: int | str) -> OutboundMessage | None:
         provider_message = _stringify_provider_value(summary.get("providerMessage"))
         provider_cost = _stringify_provider_value(first_recipient.get("cost") if isinstance(first_recipient, dict) else "")
 
-        metadata = _outbound_metadata_snapshot(outbound)
+        metadata = dict(outbound_metadata)
         metadata.update(
             {
                 "providerMessage": provider_message,
@@ -1632,6 +1683,8 @@ def record_sms_inbound_message(payload: dict | None) -> dict:
             "bill": bill,
             "subscription": subscription,
             "created": created,
+            "language": language,
+            "message_id": message_id,
         }
 
     if command == "help":

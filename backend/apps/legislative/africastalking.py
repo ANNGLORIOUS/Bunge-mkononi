@@ -66,6 +66,49 @@ def send_sms(message: str, recipients: list[str], *, sender_id: str | None = Non
     return response
 
 
+def send_sms_reply(
+    message: str,
+    recipients: list[str],
+    *,
+    link_id: str,
+    short_code: str | None = None,
+) -> dict[str, Any]:
+    recipients = [recipient.strip() for recipient in recipients if recipient and recipient.strip()]
+    if not recipients:
+        raise AfricaTalkingError("No SMS recipients were provided.")
+
+    if not message.strip():
+        raise AfricaTalkingError("SMS message cannot be empty.")
+
+    link_id = str(link_id or "").strip()
+    if not link_id:
+        raise AfricaTalkingError("Inbound SMS replies require a valid linkId.")
+
+    sms = _get_sms_service()
+    short_code = (
+        short_code
+        or getattr(settings, "AFRICASTALKING_SHORT_CODE", "")
+        or getattr(settings, "AFRICASTALKING_SENDER_ID", "")
+    ).strip()
+    if not short_code:
+        raise AfricaTalkingConfigurationError(
+            "Africa's Talking inbound replies require AFRICASTALKING_SHORT_CODE or AFRICASTALKING_SENDER_ID."
+        )
+
+    try:
+        try:
+            response = sms.send_premium(message, short_code, recipients, link_id=link_id)
+        except TypeError:
+            response = sms.send_premium(message, short_code, recipients, link_id)
+    except Exception as exc:  # noqa: BLE001
+        raise AfricaTalkingError(str(exc)) from exc
+
+    if not response:
+        raise AfricaTalkingError("Africa's Talking returned an empty SMS reply response.")
+
+    return response
+
+
 def summarize_sms_response(response: Any) -> dict[str, Any]:
     summary = {
         "provider": "africastalking",
