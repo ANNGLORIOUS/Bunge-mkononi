@@ -551,19 +551,20 @@ class UssdMenuTests(CommitCallbacksMixin, TestCase):
             format="json",
         )
 
-        with patch("apps.legislative.services.send_sms") as send_sms_mock:
+        with patch("apps.legislative.services.send_sms_reply") as send_sms_reply_mock:
             with self.capture_on_commit_callbacks(execute=True):
                 response = UssdCallbackAPIView.as_view()(request)
 
         body = response.content.decode()
         self.assertIn("Active bills are being sent by SMS", body)
-        send_sms_mock.assert_called_once()
-        message, recipients = send_sms_mock.call_args.args[:2]
+        send_sms_reply_mock.assert_called_once()
+        message, recipients = send_sms_reply_mock.call_args.args[:2]
         self.assertIn("Bunge Mkononi active bills", message)
         self.assertIn("bill-", message)
         self.assertIn("STATUS", message)
         self.assertIn("TRACK", message)
         self.assertEqual(recipients, ["+254700000000"])
+        self.assertEqual(send_sms_reply_mock.call_args.kwargs.get("link_id"), "")
 
     def test_ussd_featured_bill_returns_short_confirmation_and_sends_sms(self):
         request = self.factory.post(
@@ -572,18 +573,19 @@ class UssdMenuTests(CommitCallbacksMixin, TestCase):
             format="json",
         )
 
-        with patch("apps.legislative.services.send_sms") as send_sms_mock:
+        with patch("apps.legislative.services.send_sms_reply") as send_sms_reply_mock:
             with self.capture_on_commit_callbacks(execute=True):
                 response = UssdCallbackAPIView.as_view()(request)
 
         body = response.content.decode()
         self.assertIn("Featured bill details are being sent by SMS", body)
-        send_sms_mock.assert_called_once()
-        message, recipients = send_sms_mock.call_args.args[:2]
+        send_sms_reply_mock.assert_called_once()
+        message, recipients = send_sms_reply_mock.call_args.args[:2]
         self.assertIn("Featured bill", message)
         self.assertIn("Bill ID: bill-", message)
         self.assertIn("TRACK bill-", message)
         self.assertEqual(recipients, ["+254700000000"])
+        self.assertEqual(send_sms_reply_mock.call_args.kwargs.get("link_id"), "")
 
     def test_ussd_subscription_sends_confirmation_sms(self):
         bill = self.bills[0]
@@ -809,6 +811,46 @@ class OutboundMessageDispatchTests(TestCase):
             outbound.message,
             [outbound.recipient_phone_number],
             link_id="reply-link",
+        )
+        send_sms_mock.assert_not_called()
+
+    def test_reply_dispatch_uses_shortcode_path_for_ussd_followup(self):
+        outbound = queue_outbound_message(
+            recipient_phone_number="+254700000000",
+            message="USSD follow-up message",
+            message_type=OutboundMessageType.REPLY,
+            language=MessageLanguage.EN,
+            bill=self.bill,
+            dedupe_parts=[self.bill.pk, "ussd-follow-up"],
+            metadata={"sourceChannel": "ussd", "sourceContext": "active_bills"},
+            send_immediately=False,
+        )
+        response = {
+            "SMSMessageData": {
+                "Message": "Sent to 1/1 Total Cost: KES 0.8000",
+                "Recipients": [
+                    {
+                        "number": outbound.recipient_phone_number,
+                        "messageId": "ATPid-ussd-followup",
+                        "status": "Success",
+                        "statusCode": 101,
+                        "cost": "KES 0.8000",
+                    }
+                ],
+            }
+        }
+
+        with patch("apps.legislative.services.send_sms_reply", return_value=response) as send_reply_mock:
+            with patch("apps.legislative.services.send_sms") as send_sms_mock:
+                dispatch_outbound_message(outbound.pk)
+
+        outbound.refresh_from_db()
+        self.assertEqual(outbound.status, OutboundMessageStatus.ACCEPTED)
+        self.assertEqual(outbound.provider_message_id, "ATPid-ussd-followup")
+        send_reply_mock.assert_called_once_with(
+            outbound.message,
+            [outbound.recipient_phone_number],
+            link_id="",
         )
         send_sms_mock.assert_not_called()
 

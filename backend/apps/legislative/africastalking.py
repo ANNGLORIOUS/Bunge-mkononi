@@ -70,7 +70,7 @@ def send_sms_reply(
     message: str,
     recipients: list[str],
     *,
-    link_id: str,
+    link_id: str = "",
     short_code: str | None = None,
 ) -> dict[str, Any]:
     recipients = [recipient.strip() for recipient in recipients if recipient and recipient.strip()]
@@ -81,8 +81,6 @@ def send_sms_reply(
         raise AfricaTalkingError("SMS message cannot be empty.")
 
     link_id = str(link_id or "").strip()
-    if not link_id:
-        raise AfricaTalkingError("Inbound SMS replies require a valid linkId.")
 
     sms = _get_sms_service()
     short_code = (
@@ -96,10 +94,13 @@ def send_sms_reply(
         )
 
     try:
-        try:
-            response = sms.send_premium(message, short_code, recipients, link_id=link_id)
-        except TypeError:
-            response = sms.send_premium(message, short_code, recipients, link_id)
+        if link_id:
+            try:
+                response = sms.send_premium(message, short_code, recipients, link_id=link_id)
+            except TypeError:
+                response = sms.send_premium(message, short_code, recipients, link_id)
+        else:
+            response = sms.send_premium(message, short_code, recipients)
     except Exception as exc:  # noqa: BLE001
         raise AfricaTalkingError(str(exc)) from exc
 

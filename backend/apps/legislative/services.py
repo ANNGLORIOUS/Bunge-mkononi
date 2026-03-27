@@ -1088,12 +1088,15 @@ def dispatch_outbound_message(message_id: int | str) -> OutboundMessage | None:
     bill = outbound.bill
     outbound_metadata = _outbound_metadata_snapshot(outbound)
     reply_link_id = _stringify_provider_value(outbound_metadata.get("linkId"))
+    source_channel = _stringify_provider_value(outbound_metadata.get("sourceChannel")).lower()
 
     try:
         outbound.status = OutboundMessageStatus.SENDING
         outbound.attempt_count += 1
         outbound.save(update_fields=["status", "attempt_count", "updated_at"])
-        if outbound.message_type == OutboundMessageType.REPLY and reply_link_id:
+        if outbound.message_type == OutboundMessageType.REPLY and (
+            reply_link_id or source_channel == SubscriptionChannel.USSD
+        ):
             response = send_sms_reply(
                 outbound.message,
                 [outbound.recipient_phone_number],
