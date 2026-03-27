@@ -544,22 +544,46 @@ class UssdMenuTests(CommitCallbacksMixin, TestCase):
                 )
             )
 
-    def test_ussd_bill_list_is_paginated_and_titles_are_shortened(self):
-        request = self.factory.post("/api/ussd/", {"text": "1", "phoneNumber": "+254700000000"}, format="json")
-        response = UssdCallbackAPIView.as_view()(request)
+    def test_ussd_active_bills_returns_short_confirmation_and_sends_sms(self):
+        request = self.factory.post(
+            "/api/ussd/",
+            {"sessionId": "ussd-active-bills", "text": "1", "phoneNumber": "+254700000000"},
+            format="json",
+        )
+
+        with patch("apps.legislative.services.send_sms") as send_sms_mock:
+            with self.capture_on_commit_callbacks(execute=True):
+                response = UssdCallbackAPIView.as_view()(request)
+
         body = response.content.decode()
+        self.assertIn("Active bills are being sent by SMS", body)
+        send_sms_mock.assert_called_once()
+        message, recipients = send_sms_mock.call_args.args[:2]
+        self.assertIn("Bunge Mkononi active bills", message)
+        self.assertIn("bill-", message)
+        self.assertIn("STATUS", message)
+        self.assertIn("TRACK", message)
+        self.assertEqual(recipients, ["+254700000000"])
 
-        self.assertIn("CON Active bills (1/2)", body)
-        self.assertIn("8. More", body)
-        self.assertIn("...", body)
+    def test_ussd_featured_bill_returns_short_confirmation_and_sends_sms(self):
+        request = self.factory.post(
+            "/api/ussd/",
+            {"sessionId": "ussd-featured-bill", "text": "2", "phoneNumber": "+254700000000"},
+            format="json",
+        )
 
-        next_request = self.factory.post("/api/ussd/", {"text": "1*8", "phoneNumber": "+254700000000"}, format="json")
-        next_response = UssdCallbackAPIView.as_view()(next_request)
-        next_body = next_response.content.decode()
+        with patch("apps.legislative.services.send_sms") as send_sms_mock:
+            with self.capture_on_commit_callbacks(execute=True):
+                response = UssdCallbackAPIView.as_view()(request)
 
-        self.assertIn("CON Active bills (2/2)", next_body)
-        self.assertIn("9. Back", next_body)
-        self.assertNotIn("8. More", next_body)
+        body = response.content.decode()
+        self.assertIn("Featured bill details are being sent by SMS", body)
+        send_sms_mock.assert_called_once()
+        message, recipients = send_sms_mock.call_args.args[:2]
+        self.assertIn("Featured bill", message)
+        self.assertIn("Bill ID: bill-", message)
+        self.assertIn("TRACK bill-", message)
+        self.assertEqual(recipients, ["+254700000000"])
 
     def test_ussd_subscription_sends_confirmation_sms(self):
         bill = self.bills[0]

@@ -157,8 +157,8 @@ Configure your Africa's Talking USSD menu to post to `POST /api/ussd/`.
 
 The current menu flow supports:
 
-- `1` active bills with paginated browsing
-- `2` featured bill details
+- `1` active bills via an SMS handoff that keeps the USSD session short
+- `2` featured bill details delivered over SMS with follow-up command hints
 - `3` watchlists
 - `4` voting on the featured bill
 - `5` help
@@ -175,7 +175,7 @@ The watchlist flow supports:
 - following all bills
 - managing existing subscriptions from the same menu
 
-Bill detail menus include:
+Bill detail menus keep quick actions in USSD and move longer bill content into SMS follow-ups for:
 
 - subscribe
 - vote

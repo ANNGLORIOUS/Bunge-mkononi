@@ -140,6 +140,11 @@ LOCALIZED_TEXT: dict[MessageLanguage, dict[str, str]] = {
         "reply_subscribe_all": "Reply with 3*5 to follow all bills.",
         "reply_manage_subscription": "Reply with the number to manage a subscription.",
         "sms_confirmation_pending": "An SMS confirmation is on the way.",
+        "ussd_active_bills_sms_sent": "END Active bills are being sent by SMS. Use the bill IDs in the message to keep exploring.",
+        "ussd_featured_bill_sms_sent": "END Featured bill details are being sent by SMS. Use the bill ID in the message to keep exploring.",
+        "ussd_bill_detail_sms_sent": "END Detailed bill information is being sent by SMS.",
+        "active_bills_sms_intro": "Bunge Mkononi active bills",
+        "sms_bill_command_list": "Use STATUS, SUMMARY, KEYPOINTS, TIMELINE, IMPACT, VOTES, TRACK, or SIGN with a bill ID.",
         "support_petition": "Support petition",
         "help": (
             "END Bunge Mkononi help\n"
@@ -245,6 +250,11 @@ LOCALIZED_TEXT: dict[MessageLanguage, dict[str, str]] = {
         "reply_subscribe_all": "Jibu kwa 3*5 kufuatilia miswada yote.",
         "reply_manage_subscription": "Jibu kwa namba ili kusimamia usajili.",
         "sms_confirmation_pending": "Ujumbe wa kuthibitisha SMS unakuja.",
+        "ussd_active_bills_sms_sent": "END Miswada hai inatumwa kwa SMS. Tumia namba za miswada kwenye ujumbe kuendelea.",
+        "ussd_featured_bill_sms_sent": "END Maelezo ya mswada ulioangaziwa yanatumwa kwa SMS. Tumia namba ya mswada kwenye ujumbe kuendelea.",
+        "ussd_bill_detail_sms_sent": "END Maelezo ya kina ya mswada yanatumwa kwa SMS.",
+        "active_bills_sms_intro": "Miswada hai ya Bunge Mkononi",
+        "sms_bill_command_list": "Tumia STATUS, SUMMARY, KEYPOINTS, TIMELINE, IMPACT, VOTES, TRACK, au SIGN pamoja na namba ya mswada.",
         "support_petition": "Saidia ombi",
         "help": (
             "END Msaada wa Bunge Mkononi\n"
@@ -1003,6 +1013,43 @@ def queue_sms_reply(
     )
 
 
+def queue_ussd_followup_sms(
+    *,
+    recipient_phone_number: str,
+    message: str,
+    language: str = MessageLanguage.EN,
+    bill: Bill | None = None,
+    subscription: Subscription | None = None,
+    session_id: str = "",
+    ussd_text: str = "",
+    source_context: str = "",
+) -> OutboundMessage | None:
+    normalized_phone = normalize_kenyan_phone_number(recipient_phone_number) or recipient_phone_number.strip()
+    body = str(message or "").strip()
+    if not normalized_phone or not body:
+        return None
+
+    dedupe_identity = str(session_id or timezone.now().isoformat()).strip()
+    metadata = {
+        "billId": bill.id if bill else None,
+        "subscriptionId": subscription.pk if subscription else None,
+        "sessionId": str(session_id or "").strip(),
+        "ussdText": str(ussd_text or "").strip(),
+        "sourceChannel": SubscriptionChannel.USSD,
+        "sourceContext": source_context,
+    }
+    return queue_outbound_message(
+        recipient_phone_number=normalized_phone,
+        message=body,
+        message_type=OutboundMessageType.REPLY,
+        language=language,
+        bill=bill,
+        subscription=subscription,
+        dedupe_parts=["ussd", source_context, dedupe_identity],
+        metadata=metadata,
+    )
+
+
 def _outbound_metadata_snapshot(outbound: OutboundMessage) -> dict[str, object]:
     if isinstance(outbound.metadata, dict):
         return dict(outbound.metadata)
@@ -1578,6 +1625,51 @@ def _build_subscription_confirmation_sms(
         lines.insert(2, _format_bill_sms_summary(bill))
         lines.append(_translate(language, "reply_status", bill_id=bill.id))
     return "\n".join(lines)
+
+
+def _build_ussd_active_bills_sms(
+    bills: list[Bill],
+    language: str = MessageLanguage.EN,
+    *,
+    limit: int = 4,
+) -> str:
+    if not bills:
+        return _translate(language, "no_bills")
+
+    lines = [_translate(language, "active_bills_sms_intro")]
+    for index, bill in enumerate(bills[:limit], start=1):
+        lines.append(f"{index}. {bill.id} - {_truncate_text(bill.title, 48)}")
+        lines.append(f"{_translate(language, 'status_prefix')}: {bill.status}")
+
+    if len(bills) > limit:
+        lines.append(_translate(language, "search_help"))
+
+    lines.append(_translate(language, "sms_bill_command_list"))
+    return "\n".join(lines)
+
+
+def _build_ussd_featured_bill_sms(bill: Bill, language: str = MessageLanguage.EN) -> str:
+    lines = [
+        f"{_translate(language, 'featured_bill_title')}: {bill.title}",
+        f"Bill ID: {bill.id}",
+        _format_bill_sms_summary(bill),
+        _translate(language, "reply_status", bill_id=bill.id),
+        _translate(language, "reply_track", bill_id=bill.id),
+        _translate(language, "reply_votes", bill_id=bill.id),
+        _translate(language, "reply_sign", bill_id=bill.id),
+    ]
+    return "\n".join(lines)
+
+
+def _build_ussd_bill_detail_sms(body: str, bill: Bill, language: str = MessageLanguage.EN) -> str:
+    lines = [
+        body,
+        _translate(language, "reply_status", bill_id=bill.id),
+        _translate(language, "reply_track", bill_id=bill.id),
+        _translate(language, "reply_votes", bill_id=bill.id),
+        _translate(language, "reply_sign", bill_id=bill.id),
+    ]
+    return "\n".join(line for line in lines if str(line).strip())
 
 
 def _queue_subscription_confirmation_sms(

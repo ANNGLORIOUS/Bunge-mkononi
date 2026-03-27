@@ -72,6 +72,9 @@ from .services import (
     _build_bill_timeline_message,
     _build_county_message,
     _build_petition_message,
+    _build_ussd_active_bills_sms,
+    _build_ussd_bill_detail_sms,
+    _build_ussd_featured_bill_sms,
     _metadata_value,
     _build_sms_help_message,
     _build_subscription_list_message,
@@ -91,6 +94,7 @@ from .services import (
     create_poll_response,
     create_subscription,
     generate_due_digests,
+    queue_ussd_followup_sms,
     queue_sms_reply,
     record_sms_delivery_report,
     record_sms_inbound_message,
@@ -1258,6 +1262,17 @@ class UssdCallbackAPIView(APIView):
             )
             return HttpResponse(response_text, content_type="text/plain")
 
+        def _send_ussd_followup(message: str, *, bill: Bill | None = None, source_context: str = "") -> None:
+            queue_ussd_followup_sms(
+                recipient_phone_number=phone_number,
+                message=message,
+                language=language,
+                bill=bill,
+                session_id=session_id,
+                ussd_text=text,
+                source_context=source_context,
+            )
+
         def _subscription_confirmation(subscription: Subscription, created_subscription: bool) -> str:
             target_label = _subscription_label(subscription)
             lead = _translate(
@@ -1304,16 +1319,36 @@ class UssdCallbackAPIView(APIView):
                 return _translate(language, "invalid_option")
 
             if option == "3":
-                return _format_bill_summary(bill, language)
+                _send_ussd_followup(
+                    _build_ussd_bill_detail_sms(_build_bill_document_summary_message(bill, language), bill, language),
+                    bill=bill,
+                    source_context="bill_summary",
+                )
+                return _translate(language, "ussd_bill_detail_sms_sent")
 
             if option == "4":
-                return "END " + _build_bill_keypoints_message(bill, language)
+                _send_ussd_followup(
+                    _build_ussd_bill_detail_sms(_build_bill_keypoints_message(bill, language), bill, language),
+                    bill=bill,
+                    source_context="bill_keypoints",
+                )
+                return _translate(language, "ussd_bill_detail_sms_sent")
 
             if option == "5":
-                return "END " + _build_bill_timeline_message(bill, language)
+                _send_ussd_followup(
+                    _build_ussd_bill_detail_sms(_build_bill_timeline_message(bill, language), bill, language),
+                    bill=bill,
+                    source_context="bill_timeline",
+                )
+                return _translate(language, "ussd_bill_detail_sms_sent")
 
             if option == "6":
-                return "END " + _build_county_message(bill, language)
+                _send_ussd_followup(
+                    _build_ussd_bill_detail_sms(_build_county_message(bill, language), bill, language),
+                    bill=bill,
+                    source_context="bill_county_impact",
+                )
+                return _translate(language, "ussd_bill_detail_sms_sent")
 
             if option == "7":
                 if len(detail_parts) == 1:
@@ -1440,37 +1475,23 @@ class UssdCallbackAPIView(APIView):
             return _store_response(_translate(language, "exit_message"))
 
         if choice == "1":
-            response_text = _format_bill_list_menu(
-                _translate(language, "active_bills_title"),
-                active_bills,
-                _translate(language, "reply_view_bill"),
-                language=language,
+            if not active_bills:
+                return _store_response(_translate(language, "no_bills"))
+            _send_ussd_followup(
+                _build_ussd_active_bills_sms(active_bills, language),
+                source_context="active_bills",
             )
-            if len(parts) > 1:
-                route, page, bill, tail = _resolve_bill_list_selection(parts, active_bills)
-                if route == "main_menu":
-                    response_text = main_menu
-                elif route == "menu":
-                    response_text = _format_bill_list_menu(
-                        _translate(language, "active_bills_title"),
-                        active_bills,
-                        _translate(language, "reply_view_bill"),
-                        language=language,
-                        page=page,
-                    )
-                elif route == "invalid" or bill is None:
-                    response_text = _translate(language, "invalid_bill")
-                else:
-                    response_text = _handle_bill_detail(bill, tail)
-            return _store_response(response_text)
+            return _store_response(_translate(language, "ussd_active_bills_sms_sent"))
 
         if choice == "2":
             if not featured_bill:
                 return _store_response(_translate(language, "no_featured"))
-            response_text = _format_bill_detail_menu(featured_bill, language)
-            if len(parts) > 1:
-                response_text = _handle_bill_detail(featured_bill, parts[1:])
-            return _store_response(response_text)
+            _send_ussd_followup(
+                _build_ussd_featured_bill_sms(featured_bill, language),
+                bill=featured_bill,
+                source_context="featured_bill",
+            )
+            return _store_response(_translate(language, "ussd_featured_bill_sms_sent"))
 
         if choice == "3":
             if len(parts) == 1:
