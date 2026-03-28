@@ -58,6 +58,7 @@ class DocumentProcessingStatus(models.TextChoices):
 
 class DocumentExtractionMethod(models.TextChoices):
     TEXT = "text", "Text extraction"
+    AI = "ai", "AI vision extraction"
     OCR = "ocr", "OCR"
 
 
@@ -166,12 +167,19 @@ class Bill(models.Model):
         default="",
     )
     document_source_url = models.URLField(blank=True, default="", max_length=2048)
+    document_source_fingerprint = models.CharField(max_length=64, blank=True, default="")
     document_text = models.TextField(blank=True, default="")
     document_pages = models.JSONField(default=list, blank=True)
     document_error = models.TextField(blank=True, default="")
     document_page_count = models.PositiveIntegerField(default=0)
     document_word_count = models.PositiveIntegerField(default=0)
     document_processed_at = models.DateTimeField(null=True, blank=True)
+    ai_summary = models.TextField(blank=True, default="")
+    ai_key_points = models.JSONField(default=list, blank=True)
+    ai_timeline = models.JSONField(default=list, blank=True)
+    ai_source_hash = models.CharField(max_length=64, blank=True, default="")
+    ai_error = models.TextField(blank=True, default="")
+    ai_processed_at = models.DateTimeField(null=True, blank=True)
     sponsor = models.CharField(
         max_length=255,
         blank=True,

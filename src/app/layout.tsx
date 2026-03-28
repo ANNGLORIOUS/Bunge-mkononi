@@ -1,21 +1,31 @@
 import type { Metadata } from 'next';
-import { IBM_Plex_Serif, Inter, JetBrains_Mono } from 'next/font/google';
+import { ThemeProvider } from '@mui/material/styles';
+import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter';
+import { DM_Mono, DM_Sans, Playfair_Display } from 'next/font/google';
+import theme from '@/theme';
 import './globals.css';
 
-const inter = Inter({
+const dmSans = DM_Sans({
   subsets: ['latin'],
-  variable: '--font-inter',
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-jetbrains-mono',
-});
-
-const ibmPlexSerif = IBM_Plex_Serif({
-  subsets: ['latin'],
-  variable: '--font-ibm-plex-serif',
+  variable: '--font-dm-sans',
+  display: 'swap',
   weight: ['400', '500', '600'],
+  style: ['normal', 'italic'],
+  // Removed `axes` because Next.js requires `weight: 'variable'` when axes are defined.
+});
+
+const dmMono = DM_Mono({
+  subsets: ['latin'],
+  variable: '--font-dm-mono',
+  display: 'swap',
+  weight: ['400', '500'],
+});
+
+const playfairDisplay = Playfair_Display({
+  subsets: ['latin'],
+  variable: '--font-playfair',
+  display: 'swap',
+  weight: ['600', '700'],
 });
 
 export const metadata: Metadata = {
@@ -32,9 +42,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className={`${inter.variable} ${jetbrainsMono.variable} ${ibmPlexSerif.variable} min-h-full text-foreground`}>
-        {children}
+    <html lang="en" className="h-full antialiased" data-scroll-behavior="smooth">
+      <body className={`${dmSans.variable} ${dmMono.variable} ${playfairDisplay.variable} min-h-full text-foreground`}>
+        <AppRouterCacheProvider options={{ enableCssLayer: true }}>
+          <ThemeProvider theme={theme}>{children}</ThemeProvider>
+        </AppRouterCacheProvider>
       </body>
     </html>
   );

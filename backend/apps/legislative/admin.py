@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db import transaction
 
 from .models import (
     Bill,
@@ -12,6 +13,7 @@ from .models import (
     SystemLog,
     WebhookReceipt,
 )
+from .services import schedule_bill_document_processing
 
 
 @admin.register(Bill)
@@ -33,6 +35,15 @@ class BillAdmin(admin.ModelAdmin):
     list_filter = ("status", "category", "is_hot", "document_status", "document_method")
     search_fields = ("id", "title", "summary", "sponsor")
     ordering = ("-is_hot", "-date_introduced", "title")
+
+    def save_model(self, request, obj, form, change):  # pyright: ignore[reportIncompatibleMethodOverride]
+        super().save_model(request, obj, form, change)
+        transaction.on_commit(
+            lambda: schedule_bill_document_processing(
+                Bill.objects.get(pk=obj.pk),
+                check_for_updates=True,
+            )
+        )
 
 
 @admin.register(Petition)

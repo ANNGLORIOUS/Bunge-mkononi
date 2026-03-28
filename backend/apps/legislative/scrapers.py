@@ -1,8 +1,10 @@
 """
 Scraper helpers for the Kenyan Parliament bills page.
 
-This module fetches the bills listing page, parses bill cards or table rows,
-and upserts the results into the local Bill table.
+This module fetches the bills listing page, parses bill records with
+deterministic HTML rules, and upserts bill metadata into the local Bill table.
+Document extraction and AI interpretation happen later at runtime when a bill
+is queried.
 """
 
 from __future__ import annotations
@@ -10,14 +12,14 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, datetime
-from typing import Optional
+from typing import Callable, Optional
 from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
 from .models import BillStatus
-from .services import process_bill_document, update_bill_status
+from .services import update_bill_status
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,9 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
         "conservation",
     ],
 }
+
+
+ProgressCallback = Callable[[str], None]
 
 
 def _normalise_stage(raw: str) -> str:
@@ -126,7 +131,7 @@ def _looks_like_bill_title(title: str) -> bool:
     }:
         return False
 
-    return any(keyword in lowered for keyword in ("bill", "act", "amendment"))
+    return re.search(r"\b(bill|act|amendment)\b", lowered) is not None
 
 
 def _parse_bill_links(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[dict]:
@@ -145,6 +150,7 @@ def _parse_bill_links(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list
         seen_titles.add(dedupe_key)
 
         href = anchor["href"]
+        document_url = urljoin(base_url, href)
         bills.append(
             {
                 "id": _slugify_id(title, index),
@@ -153,7 +159,8 @@ def _parse_bill_links(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list
                 "status": BillStatus.FIRST_READING,
                 "category": _guess_category(title),
                 "date_introduced": date.today(),
-                "parliament_url": urljoin(base_url, href),
+                "parliament_url": document_url,
+                "full_text_url": document_url,
                 "summary": f"{title}.",
                 "is_hot": "finance" in title.lower() or "amendment" in title.lower(),
             }
@@ -234,7 +241,7 @@ def fetch_bill_pages(
     return pages, errors
 
 
-def parse_bills_html(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[dict]:
+def _parse_bills_html_rule_based(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[dict]:
     soup = BeautifulSoup(html, "lxml")
     bills: list[dict] = []
 
@@ -278,10 +285,13 @@ def parse_bills_html(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[
             date_raw = cell_text(idx_date)
 
             parliament_url = ""
+            full_text_url = ""
             if 0 <= idx_title < len(cells):
                 link = cells[idx_title].find("a", href=True)
                 if link:
-                    parliament_url = urljoin(base_url, link["href"])
+                    document_url = urljoin(base_url, link["href"])
+                    parliament_url = document_url
+                    full_text_url = document_url
 
             bill_id = _slugify_id(title, i)
             bills.append(
@@ -293,6 +303,7 @@ def parse_bills_html(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[
                     "category": _guess_category(title),
                     "date_introduced": _parse_date(date_raw) or date.today(),
                     "parliament_url": parliament_url or base_url,
+                    "full_text_url": full_text_url,
                     "summary": f"{title} - introduced by {sponsor}.",
                     "is_hot": "finance" in title.lower() or "amendment" in title.lower(),
                 }
@@ -312,9 +323,12 @@ def parse_bills_html(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[
             continue
 
         parliament_url = ""
+        full_text_url = ""
         link = item.find("a", href=True)
         if link:
-            parliament_url = urljoin(base_url, link["href"])
+            document_url = urljoin(base_url, link["href"])
+            parliament_url = document_url
+            full_text_url = document_url
 
         text = item.get_text(separator=" ", strip=True)
         stage_raw = ""
@@ -332,6 +346,7 @@ def parse_bills_html(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[
                 "category": _guess_category(title),
                 "date_introduced": date.today(),
                 "parliament_url": parliament_url or base_url,
+                "full_text_url": full_text_url,
                 "summary": f"{title}.",
                 "is_hot": False,
             }
@@ -341,6 +356,10 @@ def parse_bills_html(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[
         return bills
 
     return _parse_bill_links(html, base_url=base_url)
+
+
+def parse_bills_html(html: str, base_url: str = DEFAULT_PARLIAMENT_URL) -> list[dict]:
+    return _parse_bills_html_rule_based(html, base_url=base_url)
 
 
 def parse_bill_pages(pages: list[tuple[str, str]]) -> list[dict]:
@@ -361,19 +380,26 @@ def parse_bill_pages(pages: list[tuple[str, str]]) -> list[dict]:
     return bills
 
 
-def upsert_bills(bills: list[dict]) -> dict:
+def upsert_bills(
+    bills: list[dict],
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> dict:
     from apps.legislative.models import Bill  # noqa: PLC0415
 
     created = 0
     updated = 0
     errors: list[str] = []
     processed_bills: list[dict] = []
+    total_bills = len(bills)
 
-    for data in bills:
+    for index, data in enumerate(bills, start=1):
         try:
             bill_id = data.pop("id")
             title = data.get("title", bill_id)
             sponsor = data.get("sponsor", "")
+            if progress_callback is not None:
+                progress_callback(f"[{index}/{total_bills}] Upserting {title}")
             previous_bill = Bill.objects.filter(pk=bill_id).only("status").first()
             previous_status = previous_bill.status if previous_bill else None
             bill, was_created = Bill.objects.update_or_create(id=bill_id, defaults=data)
@@ -386,21 +412,16 @@ def upsert_bills(bills: list[dict]) -> dict:
                 if previous_status and previous_status != bill.status:
                     update_bill_status(bill, bill.status, previous_status=previous_status, actor="scrape")
 
-            document_result = process_bill_document(bill)
             processed_bills.append(
                 {
                     "bill_id": bill_id,
                     "title": title,
                     "action": action,
                     "sponsor": sponsor,
-                    "document_status": document_result.get("status", ""),
-                    "document_method": document_result.get("method", ""),
+                    "document_status": bill.document_status,
+                    "document_method": bill.document_method,
                 }
             )
-            if document_result.get("status") == "failed":
-                document_error = str(document_result.get("error") or "").strip()
-                if document_error:
-                    errors.append(f"Document processing failed for '{title}': {document_error}")
         except Exception as exc:  # noqa: BLE001
             message = f"Error upserting bill '{data.get('title', '?')}': {exc}"
             logger.error(message)
@@ -412,10 +433,15 @@ def upsert_bills(bills: list[dict]) -> dict:
 def scrape_parliament_bills(
     url: str = DEFAULT_PARLIAMENT_URL,
     timeout: int = DEFAULT_TIMEOUT,
+    *,
+    max_pages: int = 25,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict:
     logger.info("Starting parliament bills scrape from %s", url)
+    if progress_callback is not None:
+        progress_callback(f"Fetching bill pages from {url}")
 
-    pages, fetch_errors = fetch_bill_pages(url, timeout=timeout)
+    pages, fetch_errors = fetch_bill_pages(url, timeout=timeout, max_pages=max_pages)
     if not pages:
         logger.error("Failed to fetch any bill pages from %s", url)
         return {
@@ -428,14 +454,22 @@ def scrape_parliament_bills(
             "pages_fetched": 0,
         }
 
+    if progress_callback is not None:
+        progress_callback(f"Fetched {len(pages)} page(s); parsing bill listings")
     bills = parse_bill_pages(pages)
     logger.info("Parsed %d bills from %d page(s)", len(bills), len(pages))
+    if progress_callback is not None:
+        progress_callback(f"Parsed {len(bills)} bill(s); upserting metadata")
 
-    summary = upsert_bills(bills)
+    summary = upsert_bills(
+        bills,
+        progress_callback=progress_callback,
+    )
     summary["url"] = url
     summary["bills_found"] = len(bills)
     summary["pages_fetched"] = len(pages)
     summary["errors"] = fetch_errors + summary["errors"]
+    summary["documents_processed"] = False
 
     logger.info(
         "Scrape complete: %d found, %d created, %d updated, %d errors",
@@ -444,4 +478,9 @@ def scrape_parliament_bills(
         summary["updated"],
         len(summary["errors"]),
     )
+    if progress_callback is not None:
+        progress_callback(
+            f"Scrape complete: {summary['bills_found']} found, "
+            f"{summary['created']} created, {summary['updated']} updated"
+        )
     return summary

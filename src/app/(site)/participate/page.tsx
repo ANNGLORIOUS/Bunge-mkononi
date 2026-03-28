@@ -37,14 +37,14 @@ export default async function ParticipatePage() {
   return (
     <main className="pb-20">
       {dashboardError && (
-        <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
             {dashboardError}
           </div>
         </div>
       )}
 
-      <section className="mx-auto max-w-7xl px-4 pt-8 sm:px-6">
+      <section className="mx-auto max-w-7xl px-4 sm:px-6">
         <SiteBreadcrumbs items={[{ href: '/', label: 'Home' }, { label: 'Participate' }]} />
         <div className="surface-card relative overflow-hidden p-8">
           <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(15,23,42,0.02),transparent_40%),radial-gradient(circle_at_top_right,rgba(29,78,216,0.05),transparent_24%)]" />
@@ -100,7 +100,7 @@ export default async function ParticipatePage() {
         </div>
       </section>
 
-      <section className="mx-auto mt-8 grid max-w-7xl gap-6 px-4 sm:px-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
+      <section className="mx-auto mt-8 grid max-w-7xl gap-6 px-4 sm:px-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)] xl:items-start">
         {featuredBill ? (
           <ParticipationHub
             billId={featuredBill.id}
@@ -117,40 +117,42 @@ export default async function ParticipatePage() {
           </div>
         )}
 
-        <aside className="space-y-6">
-          {countyData.length > 0 && <RegionalImpact counties={countyData} />}
+        <aside className="space-y-6 xl:self-start">
+          <div className="xl:sticky xl:top-[65px] xl:z-10">
+            <section className="surface-card p-6">
+              <div className="mb-6 flex items-center gap-3 border-b border-slate-200 pb-4">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
+                  <ShieldCheck size={16} />
+                </span>
+                <div>
+                  <p className="eyebrow text-slate-500">How To Participate</p>
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-900">Three Quick Routes</h3>
+                </div>
+              </div>
+              <div className="mt-5 space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">1. Subscribe</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                    Add your phone number to receive updates when a bill changes.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">2. Vote</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                    Share support, opposition, or a request for more information.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">3. Follow The Bill</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                    Each bill gets its own route family for overview, documents, votes, and participation.
+                  </p>
+                </div>
+              </div>
+            </section>
+          </div>
 
-          <section className="surface-card p-6">
-            <div className="mb-6 flex items-center gap-3 border-b border-slate-200 pb-4">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-                <ShieldCheck size={16} />
-              </span>
-              <div>
-                <p className="eyebrow text-slate-500">How To Participate</p>
-                <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-900">Three Quick Routes</h3>
-              </div>
-            </div>
-            <div className="mt-5 space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">1. Subscribe</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  Add your phone number to receive updates when a bill changes.
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">2. Vote</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  Share support, opposition, or a request for more information.
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">3. Follow The Bill</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  Each bill gets its own route family for overview, documents, votes, and participation.
-                </p>
-              </div>
-            </div>
-          </section>
+          {countyData.length > 0 && <RegionalImpact counties={countyData} />}
 
           <section className="surface-card p-6">
             <div className="mb-6 flex items-center gap-3 border-b border-slate-200 pb-4">

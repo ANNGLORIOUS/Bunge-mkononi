@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowRight, BellRing, MessageSquare, ShieldCheck, Smartphone } from 'lucide-react';
+import { ArrowRight, MessageSquare, ShieldCheck, Smartphone } from 'lucide-react';
 import { ApiError, getBill } from '@/lib/api';
 import ParticipationHub from '@/components/ParticipationHub';
 import RegionalImpact from '@/components/RegionalImpact';
@@ -24,176 +24,149 @@ export default async function BillParticipationPage({ params }: { params: Promis
   try {
     bill = await getBill(billId);
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      notFound();
-    }
-
+    if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
 
-  if (!bill) {
-    notFound();
-  }
+  if (!bill) notFound();
 
   const stage = bill.currentStage ?? bill.status;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-      <aside className="xl:sticky xl:top-24 xl:self-start">
-        <section className="surface-card p-6">
-          <div className="border-b border-slate-200 pb-4">
-            <p className="eyebrow text-slate-500">Participation Desk</p>
-            <h2 className="text-lg font-semibold text-slate-900">Channels & Guidance</h2>
-          </div>
+    <div className="grid gap-8 xl:grid-cols-[200px_minmax(0,1fr)_280px] xl:items-start">
+      {/* ── Left sidebar ── */}
+      <aside className="overflow-hidden xl:sticky xl:top-[65px] xl:self-start xl:divide-y xl:divide-[var(--line-strong)] xl:border xl:border-[var(--line-strong)] xl:bg-white">
+        <div className="h-1.5 bg-[linear-gradient(90deg,#020617_0_34%,#ffffff_34_40%,#185540_40_100%)]" />
 
-          <div className="mt-5 space-y-6">
+        {/* Bill record */}
+        <div className="px-5 py-5">
+          <p className="eyebrow mb-4 text-forest-700">Current Record</p>
+          <div className="space-y-3">
             <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Current Record</p>
-              <div className="space-y-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Bill Status</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">{stage}</p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Introduced</p>
-                  <p className="metric-mono mt-2 text-sm font-semibold text-slate-900">{formatDate(bill.dateIntroduced)}</p>
-                </div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Status</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{stage}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Introduced</p>
+              <p className="mt-1 font-mono text-xs font-semibold text-slate-900">{formatDate(bill.dateIntroduced)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Participation channels */}
+        <div className="px-5 py-5">
+          <p className="eyebrow mb-4 text-clay-600">Channels</p>
+          <div className="space-y-4">
+
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center bg-[#b32018] text-white">
+                <MessageSquare size={13} />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">SMS</p>
+                <p className="mt-1 font-mono text-xs font-semibold text-slate-900">TRACK {bill.id}</p>
               </div>
             </div>
 
-            <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Participation Routes</p>
-              <div className="space-y-3">
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-                      <MessageSquare size={16} />
-                    </span>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">SMS Follow</p>
-                      <p className="metric-mono mt-2 text-sm font-semibold text-slate-900">TRACK {bill.id}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-                      <Smartphone size={16} />
-                    </span>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">USSD Access</p>
-                      <p className="metric-mono mt-2 text-sm font-semibold text-slate-900">*384*16250#</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-                      <BellRing size={16} />
-                    </span>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Bill Story</p>
-                      <p className="mt-2 text-sm leading-6 text-slate-700">
-                        Vote here, then return to the full bill story for context, documents, and official progress.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center bg-slate-950 text-white">
+                <Smartphone size={13} />
+              </span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">USSD</p>
+                <p className="mt-1 font-mono text-xs font-semibold text-slate-900">*384*16250#</p>
               </div>
             </div>
 
-            <Link
-              href={`/bills/${bill.id}`}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-brand/20 hover:text-brand-strong"
-            >
-              Return to overview
-              <ArrowRight size={14} />
-            </Link>
           </div>
-        </section>
+        </div>
+
+        {/* Back link */}
+        <div className="px-5 py-4">
+          <Link
+            href={`/bills/${bill.id}`}
+            className="inline-flex w-full items-center justify-center gap-1.5 border border-slate-300 bg-[#f7f5f0] px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:border-clay-400 hover:text-clay-700"
+          >
+            Back to overview <ArrowRight size={12} />
+          </Link>
+        </div>
       </aside>
 
-      <div className="space-y-6">
-        <section className="surface-card p-8">
-          <div className="border-b border-slate-200 pb-6">
-            <p className="eyebrow text-brand-strong">Civic Participation Register</p>
-            <h2 className="mt-2 font-[family:var(--font-site-serif)] text-4xl font-semibold text-slate-900">Public Response</h2>
-            <p className="mt-3 max-w-3xl text-lg leading-8 text-slate-600">
-              Register support, opposition, or a request for more information in a calmer workflow designed to keep the
-              bill record clear and credible.
+      {/* ── Main: participation hub ── */}
+      <div className="min-w-0">
+        {/* Section header */}
+        <div className="overflow-hidden border border-[var(--line-strong)] bg-[linear-gradient(180deg,#fffdfb_0%,#f7f2eb_100%)]">
+          <div className="h-2 bg-[linear-gradient(90deg,#020617_0_20%,#ffffff_20_26%,#b32018_26_74%,#ffffff_74_80%,#185540_80_100%)]" />
+          <div className="px-7 py-7">
+            <p className="eyebrow text-forest-600">Civic Participation</p>
+            <h2 className="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">Public Response</h2>
+            <p className="mt-3 max-w-xl text-base leading-7 text-slate-500">
+              Register support, opposition, or a request for more information. Your response is recorded against the
+              formal legislative record.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
-              <span className="rounded-xl bg-brand-soft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-brand-strong">
-                {bill.category}
-              </span>
-              <span className="rounded-xl bg-accent-soft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-accent">
-                {stage}
-              </span>
+              <span className="badge badge-forest">{bill.category}</span>
+              <span className="badge badge-clay">{stage}</span>
             </div>
           </div>
+        </div>
 
-          <ParticipationHub
-            billId={bill.id}
-            billTitle={bill.title}
-            initialSignatureCount={bill.petition?.signatureCount ?? bill.petitionSignatureCount ?? 0}
-            initialPolling={bill.polling}
-          />
-        </section>
+        <ParticipationHub
+          billId={bill.id}
+          billTitle={bill.title}
+          initialSignatureCount={bill.petition?.signatureCount ?? bill.petitionSignatureCount ?? 0}
+          initialPolling={bill.polling}
+        />
       </div>
 
-      <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start">
+      {/* ── Right sidebar ── */}
+      <aside className="space-y-6 xl:sticky xl:top-[65px] xl:self-start">
+
         <RegionalImpact counties={bill.countyStats} />
 
-        <section className="surface-card p-6">
-          <div className="mb-6 flex items-center gap-3 border-b border-slate-200 pb-4">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-              <ShieldCheck size={16} />
-            </span>
-            <div>
-              <p className="eyebrow text-slate-500">Participation Standard</p>
-              <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-900">How Responses Are Used</h3>
-            </div>
+        {/* How responses are used */}
+        <div className="overflow-hidden border border-[var(--line-strong)] bg-white">
+          <div className="h-1.5 bg-[linear-gradient(90deg,#b32018_0_60%,#ffffff_60_66%,#185540_66_100%)]" />
+          <div className="flex items-center gap-2.5 px-5 py-4">
+            <ShieldCheck size={13} className="text-clay-600" />
+            <p className="eyebrow text-clay-600">How responses are used</p>
           </div>
-          <div className="space-y-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Support</p>
-              <p className="mt-2 text-sm leading-6 text-slate-700">Signals direct public approval and adds to the visible support count.</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Oppose</p>
-              <p className="mt-2 text-sm leading-6 text-slate-700">Captures public resistance and balances the participation record.</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Need More Info</p>
-              <p className="mt-2 text-sm leading-6 text-slate-700">Flags uncertainty and indicates where clearer public education may be needed.</p>
-            </div>
+          <div className="divide-y divide-[var(--line)]">
+            {[
+              { label: 'Support',       body: 'Signals direct public approval and adds to the visible support count.' },
+              { label: 'Oppose',        body: 'Captures public resistance and balances the participation record.' },
+              { label: 'Need more info', body: 'Flags uncertainty and indicates where clearer public education is needed.' },
+            ].map(({ label, body }) => (
+              <div key={label} className="px-5 py-4">
+                <p className="eyebrow text-forest-600">{label}</p>
+                <p className="mt-2 text-xs leading-6 text-slate-500">{body}</p>
+              </div>
+            ))}
           </div>
-        </section>
+        </div>
 
-        <section className="surface-card bg-slate-900 p-8 text-white">
-          <p className="eyebrow text-brand-soft">Next Step</p>
-          <h3 className="mt-3 text-2xl font-semibold leading-none">Keep The Record Connected</h3>
-          <p className="mt-4 text-sm leading-7 text-slate-400">
-            After recording your response, continue to the overview or documents route to reconnect public sentiment
-            with the formal legislative text.
+        {/* Dark CTA */}
+        <div className="overflow-hidden bg-slate-950 px-6 py-7">
+          <div className="mb-5 h-1.5 bg-[linear-gradient(90deg,#ffffff_0_10%,#b32018_10_66%,#ffffff_66_72%,#185540_72_100%)]" />
+          <h3 className="text-base font-bold text-white">Keep the record connected</h3>
+          <p className="mt-2 text-xs leading-6 text-slate-300">
+            Return to the overview or documents to reconnect your response with the legislative text.
           </p>
-          <div className="mt-8 space-y-3">
+          <div className="mt-5 space-y-2">
             <Link
               href={`/bills/${bill.id}`}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand text-xs font-semibold uppercase tracking-[0.24em] transition-colors hover:bg-white hover:text-brand-strong"
+              className="flex h-10 w-full items-center justify-center gap-1.5 bg-[#b32018] text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-[#971913]"
             >
-              Back To Overview
-              <ArrowRight size={16} />
+              Back to overview <ArrowRight size={12} />
             </Link>
             <Link
               href={`/bills/${bill.id}/documents`}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-white text-xs font-semibold uppercase tracking-[0.24em] transition-colors hover:bg-white hover:text-slate-900"
+              className="flex h-10 w-full items-center justify-center gap-1.5 border border-forest-500 text-xs font-bold uppercase tracking-[0.14em] text-forest-100 transition hover:border-forest-300 hover:text-white"
             >
-              Read Documents
-              <MessageSquare size={16} />
+              Read documents <MessageSquare size={12} />
             </Link>
           </div>
-        </section>
+        </div>
       </aside>
     </div>
   );

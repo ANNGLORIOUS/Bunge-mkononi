@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowUpRight, BellRing, ExternalLink, FileText } from 'lucide-react';
+import Stepper, { type StepperStep } from '@/components/ui/stepper';
 import { Bill, BillStatus, Petition } from '@/types';
 import { getBillPdfSourceUrl } from '@/lib/pdf';
 
@@ -11,13 +12,14 @@ interface Props {
 }
 
 const STAGES: BillStatus[] = ['First Reading', 'Committee', 'Second Reading', 'Third Reading', 'Presidential Assent'];
+const STAGE_STEPS: StepperStep[] = STAGES.map((stage) => ({ key: stage, label: stage }));
 
 const STATUS_STYLES: Record<BillStatus, string> = {
-  'First Reading': 'bg-slate-100 text-slate-700',
-  Committee: 'bg-amber-50 text-amber-800',
-  'Second Reading': 'bg-sky-50 text-sky-800',
-  'Third Reading': 'bg-violet-50 text-violet-800',
-  'Presidential Assent': 'bg-emerald-50 text-emerald-800',
+  'First Reading': 'border border-slate-950 bg-slate-950 text-white',
+  Committee: 'border border-slate-300 bg-white text-slate-800',
+  'Second Reading': 'border border-[#8c1d18] bg-[#b32018] text-white',
+  'Third Reading': 'border border-forest-900 bg-forest-900 text-white',
+  'Presidential Assent': 'border border-forest-200 bg-forest-50 text-forest-800',
 };
 
 function formatDate(value: string) {
@@ -31,12 +33,12 @@ function formatDate(value: string) {
 export default function BillCard({ bill, petition }: Props) {
   const livePetition = petition ?? bill.petition ?? undefined;
   const currentStage = bill.currentStage ?? bill.status;
-  const currentStageIndex = Math.max(STAGES.indexOf(currentStage), 0);
   const pdfUrl = getBillPdfSourceUrl(bill);
   const billNumber = bill.id.replace(/-/g, ' ').toUpperCase();
+  const leadSummary = bill.aiSummary?.trim() || bill.summary;
 
   return (
-    <article className="group px-6 py-6 transition-colors duration-200 hover:bg-slate-50/80">
+    <article className="group border-l-2 border-l-transparent px-6 py-6 transition-all duration-200 hover:border-l-clay-600 hover:bg-[#fbf7f1]">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start 2xl:grid-cols-[minmax(0,1.7fr)_240px_260px]">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs uppercase tracking-[0.18em] text-slate-500">
@@ -44,7 +46,7 @@ export default function BillCard({ bill, petition }: Props) {
             <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" />
             <span className="metric-mono">Bill No. {billNumber}</span>
             <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:inline-block" />
-            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-600">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-clay-700">
               {bill.category}
             </span>
           </div>
@@ -56,57 +58,35 @@ export default function BillCard({ bill, petition }: Props) {
           </Link>
 
           <p className="mt-3 text-sm leading-7 text-slate-600">
-            Sponsored by: <span className="font-medium text-slate-700">{bill.sponsor || 'Government of Kenya'}</span>
+            Sponsored by: <span className="font-medium text-forest-800">{bill.sponsor || 'Government of Kenya'}</span>
           </p>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-700">{bill.summary}</p>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-700">{leadSummary}</p>
 
           {livePetition && (
             <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
-              <span className="metric-mono text-slate-700">{livePetition.signatureCount.toLocaleString()}</span> signatures tracked
+              <span className="metric-mono text-clay-700">{livePetition.signatureCount.toLocaleString()}</span> signatures tracked
             </p>
           )}
         </div>
 
-        <div className="min-w-0 space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 lg:col-span-2 2xl:col-span-1">
+        <div className="min-w-0 space-y-4 border border-slate-300 bg-[linear-gradient(180deg,rgba(15,23,42,0.03),rgba(255,255,255,0.95)_28%,rgba(187,61,42,0.07)_72%,rgba(24,85,64,0.08))] p-4 lg:col-span-2 2xl:col-span-1">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Status</p>
-            <span className={`mt-2 inline-flex rounded-xl px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${STATUS_STYLES[currentStage]}`}>
+            <span className={`mt-2 inline-flex px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${STATUS_STYLES[currentStage]}`}>
               {currentStage}
             </span>
           </div>
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">House Progress</p>
-            <div className="mt-3 flex items-center gap-2 sm:gap-3">
-              {STAGES.map((stage, index) => {
-                const isComplete = index <= currentStageIndex;
-                const isCurrent = stage === currentStage;
-
-                return (
-                  <div key={stage} className="flex min-w-0 flex-1 items-center gap-2">
-                    <span
-                      className={`flex h-3 w-3 shrink-0 rounded-full border ${
-                        isComplete ? 'border-brand bg-brand' : 'border-slate-300 bg-white'
-                      } ${isCurrent ? 'ring-4 ring-brand/10' : ''}`}
-                    />
-                    {index < STAGES.length - 1 && (
-                      <span className={`h-px flex-1 ${index < currentStageIndex ? 'bg-brand' : 'bg-slate-200'}`} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.16em] text-slate-500">
-              <span>{STAGES[0]}</span>
-              <span className="text-right">{STAGES[STAGES.length - 1]}</span>
-            </div>
+            <Stepper steps={STAGE_STEPS} currentStep={currentStage} showEdgeLabels colorScheme="kenya" />
           </div>
         </div>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center lg:col-start-2 lg:row-start-1 lg:flex-col lg:items-stretch 2xl:col-start-auto 2xl:row-start-auto 2xl:items-end">
           <Link
             href={`/bills/${bill.id}`}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white transition hover:bg-brand-strong sm:min-w-[180px] lg:w-full 2xl:w-auto"
+            className="inline-flex h-11 items-center justify-center gap-2 bg-slate-950 px-5 text-sm font-semibold text-white transition hover:bg-forest-900 sm:min-w-[180px] lg:w-full 2xl:w-auto"
           >
             Open Bill Story
             <ArrowUpRight size={14} />
@@ -118,7 +98,7 @@ export default function BillCard({ bill, petition }: Props) {
                 href={pdfUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:border-brand/20 hover:text-brand-strong"
+                className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 bg-white text-slate-700 transition hover:border-clay-300 hover:bg-clay-50 hover:text-clay-700"
                 aria-label={`Open PDF for ${bill.title}`}
                 title="Open PDF"
               >
@@ -127,7 +107,7 @@ export default function BillCard({ bill, petition }: Props) {
             )}
             <Link
               href={`/bills/${bill.id}/participation`}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:border-brand/20 hover:text-brand-strong"
+              className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 bg-white text-slate-700 transition hover:border-forest-300 hover:bg-forest-50 hover:text-forest-800"
               aria-label={`Follow ${bill.title}`}
               title="Follow bill"
             >
@@ -140,7 +120,7 @@ export default function BillCard({ bill, petition }: Props) {
               href={bill.parliamentUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-brand-strong"
+              className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-clay-700"
             >
               View on Parliament.go.ke
               <ExternalLink size={14} />

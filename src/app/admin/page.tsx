@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
@@ -89,11 +89,26 @@ function getActionErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function buildPageWindow(currentPage: number, totalPages: number) {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const pages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+
+  return Array.from(pages)
+    .filter((page) => page >= 1 && page <= totalPages)
+    .sort((left, right) => left - right);
+}
+
 export default function AdminPanel() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [billsLoaded, setBillsLoaded] = useState(false);
   const [logsLoaded, setLogsLoaded] = useState(false);
+  const [billCount, setBillCount] = useState(0);
+  const [billPage, setBillPage] = useState(1);
+  const [billPageSize, setBillPageSize] = useState(0);
   const [isSending, setIsSending] = useState<string | null>(null);
   const [isScraping, setIsScraping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,12 +134,30 @@ export default function AdminPanel() {
       : representativeScrapeTarget === 'MP'
       ? 'MPs'
       : 'Senators';
+  const effectiveBillPageSize = billPageSize || (billCount > 0 ? Math.max(bills.length, 1) : 1);
+  const totalBillPages = Math.max(1, Math.ceil(billCount / effectiveBillPageSize));
+  const billPageNumbers = useMemo(() => buildPageWindow(billPage, totalBillPages), [billPage, totalBillPages]);
+  const billPageStart = billCount === 0 ? 0 : (billPage - 1) * effectiveBillPageSize + 1;
+  const billPageEnd = billCount === 0 ? 0 : Math.min(billCount, billPageStart + bills.length - 1);
 
-  const refreshBills = async () => {
-    const payload = await listBills({ ordering: '-date_introduced' });
+  const refreshBills = useCallback(async (page: number) => {
+    const payload = await listBills({ ordering: '-date_introduced', page });
     setBills(payload.results);
+    setBillCount(payload.count);
+    setBillPage(page);
+    setBillPageSize((current) => {
+      if (payload.results.length === 0) {
+        return payload.count === 0 ? 0 : current;
+      }
+
+      if (page === 1) {
+        return payload.results.length;
+      }
+
+      return current === 0 ? payload.results.length : Math.max(current, payload.results.length);
+    });
     setBillsLoaded(true);
-  };
+  }, []);
 
   const refreshLogs = async () => {
     if (!hasStoredAdminCredentials()) {
@@ -176,7 +209,7 @@ export default function AdminPanel() {
   useEffect(() => {
     let active = true;
 
-    refreshBills().catch((fetchError) => {
+    refreshBills(1).catch((fetchError) => {
       console.error(fetchError);
       if (active) {
         setError('We could not load the live bill table right now.');
@@ -207,7 +240,24 @@ export default function AdminPanel() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshBills]);
+
+  const goToBillPage = async (page: number) => {
+    if (page === billPage || page < 1 || page > totalBillPages) {
+      return;
+    }
+
+    setError(null);
+    setBillsLoaded(false);
+
+    try {
+      await refreshBills(page);
+    } catch (fetchError) {
+      console.error(fetchError);
+      setBillsLoaded(true);
+      setError(getActionErrorMessage(fetchError, 'We could not load that bill page right now.'));
+    }
+  };
 
   const stats = useMemo(() => {
     const activeBills = bills.filter((bill) => bill.status !== 'Presidential Assent').length;
@@ -353,7 +403,7 @@ export default function AdminPanel() {
       setSystemNote(
         `Scrape finished: ${summary.billsFound} bill(s) processed${pagesNote}. ${describeProcessedBills(summary.processedBills)}`,
       );
-      await refreshBills();
+      await refreshBills(billPage);
       await refreshLogs();
     } catch (scrapeError) {
       console.error(scrapeError);
@@ -414,6 +464,12 @@ export default function AdminPanel() {
           <button className="flex items-center gap-3 text-sm font-bold w-full p-3 bg-indigo-600 rounded-xl">
             <FileEdit size={18} /> Manage Bills
           </button>
+          <Link
+            href="/admin/ai"
+            className="flex items-center gap-3 text-sm font-bold w-full p-3 text-slate-400 hover:bg-slate-800 rounded-xl transition"
+          >
+            <Sparkles size={18} /> AI Warmup
+          </Link>
           <button className="flex items-center gap-3 text-sm font-bold w-full p-3 text-slate-400 hover:bg-slate-800 rounded-xl transition">
             <Users size={18} /> User Data
           </button>
@@ -597,63 +653,141 @@ export default function AdminPanel() {
             <div className="p-6 border-b border-slate-700 font-bold flex items-center justify-between gap-4">
               <span>Live Bill Management</span>
               <span className="text-xs text-slate-400 uppercase tracking-widest">
-                {isBillsLoading ? 'Loading bills...' : `${stats.activeBills} active`}
+                {isBillsLoading
+                  ? 'Loading bills...'
+                  : billCount === 0
+                  ? 'No bills yet'
+                  : `Showing ${formatNumber(billPageStart)}-${formatNumber(billPageEnd)} of ${formatNumber(billCount)}`}
               </span>
             </div>
 
-            <table className="w-full text-left">
-              <thead className="text-[10px] uppercase text-slate-500 bg-slate-900/50">
-                <tr>
-                  <th className="p-4">Bill Title</th>
-                  <th className="p-4">Current Stage</th>
-                  <th className="p-4">Subscribers</th>
-                  <th className="p-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700">
-                {bills.map((bill) => (
-                  <tr key={bill.id} className="hover:bg-slate-700/30 transition">
-                    <td className="p-4 font-bold text-sm">
-                      <div>{bill.title}</div>
-                      {bill.sponsor && <div className="text-[11px] font-medium text-slate-400 mt-1">Sponsor: {bill.sponsor}</div>}
-                    </td>
-                    <td className="p-4 text-xs">
-                      <select
-                        className="bg-slate-900 border border-slate-600 rounded px-2 py-1 outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        value={bill.status}
-                        onChange={(e) => updateStatus(bill.id, e.target.value)}
-                        disabled={!canUseProtectedActions}
-                      >
-                        <option>First Reading</option>
-                        <option>Committee</option>
-                        <option>Second Reading</option>
-                        <option>Third Reading</option>
-                        <option>Presidential Assent</option>
-                      </select>
-                    </td>
-                    <td className="p-4 text-sm font-mono">{formatNumber(bill.subscriberCount ?? 0)}</td>
-                    <td className="p-4 text-right">
-                      <button
-                        onClick={() => triggerSMS(bill.id, bill.title)}
-                        disabled={isSending === bill.id || !canUseProtectedActions}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 ml-auto disabled:cursor-not-allowed disabled:opacity-60 ${
-                          isSending === bill.id ? 'bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-500'
-                        } transition`}
-                      >
-                        <Send size={14} /> {isSending === bill.id ? 'Sending...' : 'Broadcast SMS'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {!isBillsLoading && bills.length === 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="text-[10px] uppercase text-slate-500 bg-slate-900/50">
                   <tr>
-                    <td className="p-6 text-slate-400 text-sm" colSpan={4}>
-                      No live bills are available yet.
-                    </td>
+                    <th className="p-4 w-16">#</th>
+                    <th className="p-4">Bill Title</th>
+                    <th className="p-4">Current Stage</th>
+                    <th className="p-4">Subscribers</th>
+                    <th className="p-4 text-right">Actions</th>
                   </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700">
+                  {bills.map((bill, index) => (
+                    <tr key={bill.id} className="hover:bg-slate-700/30 transition">
+                      <td className="p-4 text-sm font-mono text-slate-500">{formatNumber(billPageStart + index)}</td>
+                      <td className="p-4 font-bold text-sm">
+                        <div>{bill.title}</div>
+                        {bill.sponsor && <div className="text-[11px] font-medium text-slate-400 mt-1">Sponsor: {bill.sponsor}</div>}
+                      </td>
+                      <td className="p-4 text-xs">
+                        <select
+                          className="bg-slate-900 border border-slate-600 rounded px-2 py-1 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          value={bill.status}
+                          onChange={(e) => updateStatus(bill.id, e.target.value)}
+                          disabled={!canUseProtectedActions}
+                        >
+                          <option>First Reading</option>
+                          <option>Committee</option>
+                          <option>Second Reading</option>
+                          <option>Third Reading</option>
+                          <option>Presidential Assent</option>
+                        </select>
+                      </td>
+                      <td className="p-4 text-sm font-mono">{formatNumber(bill.subscriberCount ?? 0)}</td>
+                      <td className="p-4 text-right">
+                        <button
+                          onClick={() => triggerSMS(bill.id, bill.title)}
+                          disabled={isSending === bill.id || !canUseProtectedActions}
+                          className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 ml-auto disabled:cursor-not-allowed disabled:opacity-60 ${
+                            isSending === bill.id ? 'bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-500'
+                          } transition`}
+                        >
+                          <Send size={14} /> {isSending === bill.id ? 'Sending...' : 'Broadcast SMS'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!isBillsLoading && bills.length === 0 && (
+                    <tr>
+                      <td className="p-6 text-slate-400 text-sm" colSpan={5}>
+                        No live bills are available yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {billCount > 0 && (
+              <div className="flex flex-col gap-3 border-t border-slate-700 bg-slate-900/40 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-400">
+                  {isBillsLoading
+                    ? 'Loading the selected bill page...'
+                    : `Page ${formatNumber(billPage)} of ${formatNumber(totalBillPages)}`}
+                </p>
+
+                {totalBillPages > 1 && (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void goToBillPage(1)}
+                      disabled={isBillsLoading || billPage === 1}
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      First
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void goToBillPage(billPage - 1)}
+                      disabled={isBillsLoading || billPage === 1}
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    {billPageNumbers.map((pageNumber, index) => {
+                      const previousPageNumber = billPageNumbers[index - 1];
+                      const showGap = previousPageNumber && pageNumber - previousPageNumber > 1;
+
+                      return (
+                        <Fragment key={pageNumber}>
+                          {showGap && <span className="px-1 text-xs text-slate-500">...</span>}
+                          <button
+                            type="button"
+                            onClick={() => void goToBillPage(pageNumber)}
+                            aria-current={pageNumber === billPage ? 'page' : undefined}
+                            disabled={isBillsLoading}
+                            className={`rounded-lg px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                              pageNumber === billPage
+                                ? 'bg-indigo-600 text-white'
+                                : 'border border-slate-700 text-slate-200 hover:bg-slate-700'
+                            }`}
+                          >
+                            {formatNumber(pageNumber)}
+                          </button>
+                        </Fragment>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => void goToBillPage(billPage + 1)}
+                      disabled={isBillsLoading || billPage === totalBillPages}
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void goToBillPage(totalBillPages)}
+                      disabled={isBillsLoading || billPage === totalBillPages}
+                      className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Last
+                    </button>
+                  </div>
                 )}
-              </tbody>
-            </table>
+              </div>
+            )}
           </section>
 
           <section className="bg-slate-800 rounded-2xl border border-slate-700 p-6">

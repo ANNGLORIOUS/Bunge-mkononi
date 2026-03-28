@@ -4,24 +4,35 @@ from collections import Counter, defaultdict
 from typing import Sequence, cast
 
 from django.conf import settings
-from django.db.models import Q, Sum
+from django.db import transaction
+from django.db.models import Case, IntegerField, Q, Sum, When
 from django.db.models.query import QuerySet
 from django.http import HttpResponse
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
-from rest_framework import permissions, status, viewsets
+from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.request import Request
 from rest_framework.views import APIView
 
+from .ai import (
+    CohereConfigurationError,
+    CohereServiceError,
+    answer_bill_question,
+    cohere_enabled,
+    semantic_rank_bills,
+)
 from .models import (
     Bill,
     BillCategory,
     BillStatus,
     CountyStat,
+    DocumentProcessingStatus,
     LogEventType,
     MessageLanguage,
     OutboundMessage,
@@ -46,6 +57,14 @@ from .models import (
 from .serializers import (
     BillSerializer,
     BillDetailSerializer,
+    BillProcessingDetailQuerySerializer,
+    BillProcessingDetailSerializer,
+    BillProcessingQueueClearSerializer,
+    BillProcessingRunSerializer,
+    BillProcessingStatusSerializer,
+    BillProcessingTriggerSerializer,
+    BillQuestionRequestSerializer,
+    BillQuestionResponseSerializer,
     CountyStatSerializer,
     BillVoteSummarySerializer,
     PetitionSerializer,
@@ -93,6 +112,11 @@ from .services import (
     dispatch_pending_outbound_messages,
     create_poll_response,
     create_subscription,
+    clear_scheduled_bill_document_jobs,
+    ensure_bill_document_processed,
+    get_scheduled_bill_document_job_count,
+    get_scheduled_bill_document_job_ids,
+    schedule_bill_document_processing,
     generate_due_digests,
     queue_ussd_followup_sms,
     queue_sms_reply,
@@ -108,6 +132,11 @@ from .africastalking import AfricaTalkingConfigurationError, AfricaTalkingError
 USSD_BILL_PAGE_SIZE = 4
 USSD_TITLE_LIMIT = 24
 USSD_GENERIC_PAGE_SIZE = 4
+ADMIN_BILL_PAGE_SIZE = 10
+
+
+class AdminBillPagination(PageNumberPagination):
+    page_size = ADMIN_BILL_PAGE_SIZE
 
 
 class IsStaffOrReadOnly(permissions.BasePermission):
@@ -229,6 +258,17 @@ def _normalize_request_payload(data: object) -> dict:
         except TypeError:
             return {}
     return {}
+
+
+def _order_queryset_by_bill_ids(queryset: QuerySet[Bill], bill_ids: list[str]) -> QuerySet[Bill]:
+    if not bill_ids:
+        return queryset.none()
+
+    order_by_id = Case(
+        *[When(id=bill_id, then=index) for index, bill_id in enumerate(bill_ids)],
+        output_field=IntegerField(),
+    )
+    return queryset.filter(id__in=bill_ids).order_by(order_by_id)
 
 
 def _bucket_delivery_status(status: str) -> str:
@@ -598,6 +638,8 @@ class DashboardAPIView(APIView):
 class BillViewSet(viewsets.ModelViewSet):
     serializer_class = BillSerializer
     permission_classes = [IsStaffOrReadOnly]
+    pagination_class = AdminBillPagination
+    filter_backends = [filters.OrderingFilter]
     queryset: QuerySet[Bill] = (
         Bill.objects.select_related("petition").prefetch_related(
             "representative_votes__representative",
@@ -613,6 +655,11 @@ class BillViewSet(viewsets.ModelViewSet):
         if getattr(self, "action", "") == "retrieve":
             return BillDetailSerializer
         return super().get_serializer_class()
+
+    def get_permissions(self):
+        if getattr(self, "action", "") == "ask":
+            return [permissions.AllowAny()]
+        return super().get_permissions()
 
     def get_queryset(self) -> QuerySet[Bill]:  # pyright: ignore[reportIncompatibleMethodOverride]
         request = cast(Request, self.request)
@@ -636,7 +683,7 @@ class BillViewSet(viewsets.ModelViewSet):
         if search:
             search_term = search.strip()
             if search_term:
-                queryset = queryset.filter(
+                keyword_queryset = queryset.filter(
                     Q(id__icontains=search_term)
                     | Q(title__icontains=search_term)
                     | Q(summary__icontains=search_term)
@@ -644,6 +691,15 @@ class BillViewSet(viewsets.ModelViewSet):
                     | Q(status__icontains=search_term)
                     | Q(sponsor__icontains=search_term)
                 )
+                semantic_bill_ids = semantic_rank_bills(search_term, list(queryset), top_n=40)
+                if semantic_bill_ids:
+                    keyword_bill_ids = list(keyword_queryset.values_list("pk", flat=True)[:40])
+                    ordered_ids = semantic_bill_ids + [
+                        bill_id for bill_id in keyword_bill_ids if bill_id not in semantic_bill_ids
+                    ]
+                    queryset = _order_queryset_by_bill_ids(queryset, ordered_ids)
+                else:
+                    queryset = keyword_queryset
         if sponsor:
             queryset = queryset.filter(sponsor__icontains=sponsor)
         if from_date:
@@ -653,12 +709,45 @@ class BillViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    def list(self, request, *args, **kwargs):  # pyright: ignore[reportIncompatibleMethodOverride]
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            bills = list(page)
+            serializer = self.get_serializer(bills, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        bills = list(queryset)
+        serializer = self.get_serializer(bills, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):  # pyright: ignore[reportIncompatibleMethodOverride]
+        bill = self.get_object()
+        schedule_bill_document_processing(bill)
+        serializer = self.get_serializer(bill)
+        return Response(serializer.data)
+
+    def perform_create(self, serializer):
+        bill = serializer.save()
+        transaction.on_commit(
+            lambda: schedule_bill_document_processing(
+                Bill.objects.get(pk=bill.pk),
+                check_for_updates=True,
+            )
+        )
+
     def perform_update(self, serializer):
         previous_status = serializer.instance.status
         bill = serializer.save()
         if previous_status != bill.status:
             actor = getattr(self.request.user, "username", "") or None
             update_bill_status(bill, bill.status, previous_status=previous_status, actor=actor)
+        transaction.on_commit(
+            lambda: schedule_bill_document_processing(
+                Bill.objects.get(pk=bill.pk),
+                check_for_updates=True,
+            )
+        )
 
     @action(detail=True, methods=["post"], permission_classes=[permissions.IsAdminUser])
     def broadcast(self, request, pk=None):
@@ -679,6 +768,28 @@ class BillViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=["post"], permission_classes=[permissions.AllowAny])
+    def ask(self, request, pk=None):
+        bill = self.get_object()
+        ensure_bill_document_processed(bill)
+        serializer = BillQuestionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        question = str(serializer.validated_data.get("question") or "").strip()
+        if not question:
+            raise ValidationError({"question": "Please provide a question about the bill."})
+
+        try:
+            result = answer_bill_question(bill, question)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except CohereConfigurationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except CohereServiceError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        payload = {"billId": bill.id, **result}
+        return Response(BillQuestionResponseSerializer(payload).data, status=status.HTTP_200_OK)
 
 
 class PetitionViewSet(viewsets.ModelViewSet):
@@ -1025,6 +1136,98 @@ class SmsDeliveryReportAPIView(APIView):
         return HttpResponse(response_text, content_type="text/plain")
 
 
+def _bill_processing_base_queryset() -> QuerySet[Bill]:
+    return Bill.objects.filter(Q(full_text_url__gt="") | Q(parliament_url__gt="")).order_by(
+        "-is_hot",
+        "-date_introduced",
+        "title",
+    )
+
+
+def _bill_processing_missing_documents_queryset() -> QuerySet[Bill]:
+    return _bill_processing_base_queryset().filter(
+        Q(document_processed_at__isnull=True)
+        | Q(document_source_url="")
+        | Q(document_status=DocumentProcessingStatus.UNAVAILABLE)
+    )
+
+
+def _bill_processing_missing_ai_queryset() -> QuerySet[Bill]:
+    return (
+        _bill_processing_base_queryset()
+        .filter(document_status=DocumentProcessingStatus.READY)
+        .exclude(document_text="")
+        .filter(Q(ai_processed_at__isnull=True) | Q(ai_summary=""))
+    )
+
+
+def _bill_processing_failed_queryset() -> QuerySet[Bill]:
+    return _bill_processing_base_queryset().filter(
+        document_status__in=[DocumentProcessingStatus.FAILED, DocumentProcessingStatus.NEEDS_OCR]
+    )
+
+
+def _bill_processing_queryset_for_scope(scope: str) -> QuerySet[Bill]:
+    if scope == "missing_ai":
+        return _bill_processing_missing_ai_queryset()
+    if scope == "failed":
+        return _bill_processing_failed_queryset()
+    if scope == "all":
+        return _bill_processing_base_queryset()
+    return _bill_processing_missing_documents_queryset()
+
+
+def _bill_processing_detail_queryset(detail: str) -> QuerySet[Bill]:
+    if detail == "eligible":
+        return _bill_processing_base_queryset()
+    if detail == "ready":
+        return _bill_processing_base_queryset().filter(
+            document_status=DocumentProcessingStatus.READY
+        ).exclude(document_text="")
+    if detail == "queued":
+        queued_bill_ids = get_scheduled_bill_document_job_ids()
+        if not queued_bill_ids:
+            return Bill.objects.none()
+        return _bill_processing_base_queryset().filter(pk__in=queued_bill_ids)
+    if detail == "missing_ai":
+        return _bill_processing_missing_ai_queryset()
+    if detail == "failed":
+        return _bill_processing_failed_queryset()
+    return _bill_processing_missing_documents_queryset()
+
+
+def _bill_processing_detail_metadata(detail: str) -> tuple[str, str]:
+    if detail == "eligible":
+        return (
+            "Eligible Bills",
+            "Bills that already have a Parliament document source and can be warmed in the background.",
+        )
+    if detail == "queued":
+        return (
+            "Queued Jobs",
+            "Bills currently sitting in the in-process background queue for document reading or AI generation.",
+        )
+    if detail == "ready":
+        return (
+            "Ready Documents",
+            "Bills whose document text has already been extracted and saved successfully.",
+        )
+    if detail == "missing_ai":
+        return (
+            "Missing AI Summaries",
+            "Bills with ready document text whose AI summary output is still blank or stale.",
+        )
+    if detail == "failed":
+        return (
+            "Failed Or OCR-Needed",
+            "Bills whose last background read failed or still needs additional extraction.",
+        )
+    return (
+        "Missing Documents",
+        "Bills that have a source URL but have not yet produced a stored document read.",
+    )
+
+
 class AdminMetricsAPIView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
@@ -1137,6 +1340,135 @@ class AdminMetricsAPIView(APIView):
                 "deliveryTotal": delivery_total,
             }
         )
+
+
+class BillProcessingAdminAPIView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        detail_serializer = BillProcessingDetailQuerySerializer(data=request.query_params)
+        detail_serializer.is_valid(raise_exception=True)
+        detail = cast(str | None, detail_serializer.validated_data.get("detail"))
+        limit_value = detail_serializer.validated_data.get("limit")
+        limit = limit_value if isinstance(limit_value, int) else None
+
+        if detail:
+            queryset = _bill_processing_detail_queryset(detail)
+            count = queryset.count()
+            if limit is not None:
+                queryset = queryset[:limit]
+            label, description = _bill_processing_detail_metadata(detail)
+            payload = {
+                "scope": detail,
+                "label": label,
+                "description": description,
+                "count": count,
+                "limit": limit,
+                "results": queryset,
+            }
+            return Response(BillProcessingDetailSerializer(payload).data)
+
+        payload = {
+            "aiEnabled": cohere_enabled(),
+            "totalBills": Bill.objects.count(),
+            "eligibleBills": _bill_processing_base_queryset().count(),
+            "readyDocuments": _bill_processing_base_queryset().filter(
+                document_status=DocumentProcessingStatus.READY
+            ).count(),
+            "missingDocuments": _bill_processing_missing_documents_queryset().count(),
+            "missingAi": _bill_processing_missing_ai_queryset().count(),
+            "failedDocuments": _bill_processing_failed_queryset().count(),
+            "queuedJobs": get_scheduled_bill_document_job_count(),
+        }
+        return Response(BillProcessingStatusSerializer(payload).data)
+
+    def post(self, request):
+        serializer = BillProcessingTriggerSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = cast(dict[str, object], serializer.validated_data or {})
+        scope = str(validated_data.get("scope") or "missing_documents")
+        limit_value = validated_data.get("limit")
+        limit = limit_value if isinstance(limit_value, int) else None
+
+        queryset = _bill_processing_queryset_for_scope(scope)
+        matched_count = queryset.count()
+        if limit is not None:
+            queryset = queryset[:limit]
+
+        queued = 0
+        already_queued = 0
+        for bill in queryset:
+            if schedule_bill_document_processing(bill, check_for_updates=True):
+                queued += 1
+            else:
+                already_queued += 1
+
+        message = (
+            f"Queued {queued} bill{'s' if queued != 1 else ''} for background AI processing "
+            f"from the {scope.replace('_', ' ')} set."
+        )
+        if already_queued:
+            message = (
+                f"{message} {already_queued} bill{'s were' if already_queued != 1 else ' was'} already queued "
+                "or already up to date."
+            )
+
+        record_system_log(
+            LogEventType.SYSTEM,
+            message,
+            {
+                "action": "bill_processing_backfill",
+                "scope": scope,
+                "limit": limit,
+                "matchedBills": matched_count,
+                "queuedBills": queued,
+                "alreadyQueuedBills": already_queued,
+                "queuedJobs": get_scheduled_bill_document_job_count(),
+            },
+        )
+
+        payload = {
+            "scope": scope,
+            "limit": limit,
+            "matchedBills": matched_count,
+            "queuedBills": queued,
+            "alreadyQueuedBills": already_queued,
+            "queuedJobs": get_scheduled_bill_document_job_count(),
+            "message": message,
+        }
+        return Response(BillProcessingRunSerializer(payload).data)
+
+    def delete(self, request):
+        summary = clear_scheduled_bill_document_jobs()
+        dequeued_jobs = int(summary.get("dequeuedJobs") or 0)
+        active_jobs = int(summary.get("activeJobs") or 0)
+        queued_jobs = int(summary.get("queuedJobs") or 0)
+
+        message = f"Dequeued {dequeued_jobs} waiting bill job{'s' if dequeued_jobs != 1 else ''}."
+        if active_jobs:
+            message = (
+                f"{message} {active_jobs} job{'s are' if active_jobs != 1 else ' is'} already processing "
+                "and may still finish."
+            )
+
+        record_system_log(
+            LogEventType.SYSTEM,
+            message,
+            {
+                "action": "bill_processing_queue_clear",
+                "dequeuedJobs": dequeued_jobs,
+                "activeJobs": active_jobs,
+                "queuedJobs": queued_jobs,
+            },
+        )
+
+        payload = {
+            "dequeuedJobs": dequeued_jobs,
+            "activeJobs": active_jobs,
+            "queuedJobs": queued_jobs,
+            "message": message,
+        }
+        return Response(BillProcessingQueueClearSerializer(payload).data)
 
 
 class ScrapeBillsAPIView(APIView):

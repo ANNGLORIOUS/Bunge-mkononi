@@ -5,6 +5,13 @@ import {
   BillStatus,
   BillVoteSummary,
   BillVotesResponse,
+  BillQuestionResponse,
+  BillProcessingRunSummary,
+  BillProcessingQueueClearSummary,
+  BillProcessingDetailResponse,
+  BillProcessingDetailScope,
+  BillProcessingScope,
+  BillProcessingStatus,
   AdminSmsMetricsResponse,
   CountyStat,
   DashboardResponse,
@@ -222,6 +229,13 @@ export async function getBill(id: string) {
   return requestJson<BillDetail>(`/bills/${id}/`);
 }
 
+export async function askBillQuestion(billId: string, question: string) {
+  return requestJson<BillQuestionResponse>(`/bills/${billId}/ask/`, {
+    method: 'POST',
+    body: JSON.stringify({ question }),
+  });
+}
+
 export async function listRepresentatives(query: { billId?: string; search?: string } = {}) {
   return unwrapPaginated(
     await requestJson<PaginatedResponse<Representative>>('/representatives/', {
@@ -265,6 +279,32 @@ export async function listScrapeHistory() {
 
 export async function getAdminMetrics() {
   return requestJson<AdminSmsMetricsResponse>('/admin/metrics/');
+}
+
+export async function getBillProcessingStatus() {
+  return requestJson<BillProcessingStatus>('/bills/process/');
+}
+
+export async function getBillProcessingDetail(detail: BillProcessingDetailScope, limit = 40) {
+  return requestJson<BillProcessingDetailResponse>('/bills/process/', {
+    query: {
+      detail,
+      limit,
+    },
+  });
+}
+
+export async function runBillProcessing(payload: { scope: BillProcessingScope; limit?: number | null }) {
+  return requestJson<BillProcessingRunSummary>('/bills/process/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function clearQueuedBillProcessing() {
+  return requestJson<BillProcessingQueueClearSummary>('/bills/process/', {
+    method: 'DELETE',
+  });
 }
 
 export async function postVote(payload: { billId: string; choice: PollChoice; phoneNumber?: string }) {

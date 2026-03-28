@@ -1,127 +1,202 @@
+@layer theme, base, mui, components, utilities;
 @import "tailwindcss";
 
+/* ─── Tokens ─────────────────────────────────────────────────────────────── */
+
 :root {
-  --font-site-sans: var(--font-inter), "Segoe UI", system-ui, sans-serif;
-  --font-site-serif: var(--font-ibm-plex-serif), "Georgia", serif;
-  --font-site-mono: var(--font-jetbrains-mono), "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
-  --background: #f9fafb;
-  --foreground: #0f172a;
-  --surface: rgba(255, 255, 255, 0.96);
-  --surface-strong: #ffffff;
-  --line: rgba(15, 23, 42, 0.05);
-  --line-strong: rgba(15, 23, 42, 0.09);
-  --brand: #1d4ed8;
-  --brand-strong: #1e3a8a;
-  --brand-soft: #dbeafe;
-  --accent: #334155;
-  --accent-soft: #e2e8f0;
-  --success: #15803d;
-  --success-soft: #dcfce7;
-  --warning: #b45309;
-  --warning-soft: #fef3c7;
-  --danger: #b91c1c;
-  --danger-soft: #fee2e2;
-  --radius-sm: 0.75rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 0.75rem;
-  --shadow-soft: 0 12px 32px -20px rgba(15, 23, 42, 0.16);
-  --shadow-lift: 0 18px 40px -24px rgba(15, 23, 42, 0.2);
+  --font-site-sans:  var(--font-dm-sans),  "Segoe UI", system-ui, sans-serif;
+  --font-site-serif: var(--font-playfair), "Georgia", serif;
+  --font-site-mono:  var(--font-dm-mono),  "SFMono-Regular", "Consolas", monospace;
+
+  /* Surfaces */
+  --background:      #f7f5f0;
+  --foreground:      #0d1f14;
+  --surface:         #ffffff;
+  --surface-strong:  #ffffff;
+  --surface-muted:   #f2f0eb;
+
+  /* Lines */
+  --line:            rgba(13, 31, 20, 0.07);
+  --line-strong:     rgba(13, 31, 20, 0.13);
+
+  /* Brand — forest green */
+  --brand:           #1a5c38;
+  --brand-strong:    #0e3327;
+  --brand-mid:       #2d7a50;
+  --brand-soft:      #e8f4ee;
+  --brand-subtle:    #f0f7f3;
+
+  /* Accent — warm clay red (Kenya flag) */
+  --accent:          #bb3d2a;
+  --accent-strong:   #8c2a1c;
+  --accent-soft:     #faeae7;
+
+  /* Neutral */
+  --muted:           #64748b;
+  --muted-soft:      #f1f5f9;
+
+  /* Semantic */
+  --success:         #166534;
+  --success-soft:    #dcfce7;
+  --warning:         #92400e;
+  --warning-soft:    #fef3c7;
+  --danger:          #991b1b;
+  --danger-soft:     #fee2e2;
+
+  /* Geometry */
+  --radius-sm:       0rem;
+  --radius-md:       0rem;
+  --radius-lg:       0rem;
+
+  /* Shadows — tighter, more grounded */
+  --shadow-soft:     0 1px 3px rgba(13, 31, 20, 0.06), 0 4px 12px -4px rgba(13, 31, 20, 0.08);
+  --shadow-lift:     0 4px 20px -6px rgba(13, 31, 20, 0.14);
+  --shadow-card:     0 0 0 1px var(--line), var(--shadow-soft);
 }
 
+/* ─── Theme mapping ───────────────────────────────────────────────────────── */
+
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-surface: var(--surface);
+  --color-background:    var(--background);
+  --color-foreground:    var(--foreground);
+  --color-surface:       var(--surface);
   --color-surface-strong: var(--surface-strong);
-  --color-line: var(--line);
-  --color-brand: var(--brand);
-  --color-brand-strong: var(--brand-strong);
-  --color-brand-soft: var(--brand-soft);
-  --color-accent: var(--accent);
-  --color-accent-soft: var(--accent-soft);
-  --color-success: var(--success);
-  --color-success-soft: var(--success-soft);
-  --color-warning: var(--warning);
-  --color-warning-soft: var(--warning-soft);
-  --color-danger: var(--danger);
-  --color-danger-soft: var(--danger-soft);
-  --font-sans: var(--font-site-sans);
-  --font-serif: var(--font-site-serif);
-  --font-mono: var(--font-site-mono);
+  --color-surface-muted: var(--surface-muted);
+  --color-line:          var(--line);
+  --color-line-strong:   var(--line-strong);
+
+  --color-brand:         var(--brand);
+  --color-brand-strong:  var(--brand-strong);
+  --color-brand-mid:     var(--brand-mid);
+  --color-brand-soft:    var(--brand-soft);
+  --color-brand-subtle:  var(--brand-subtle);
+
+  --color-accent:        var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft:   var(--accent-soft);
+
+  --color-muted:         var(--muted);
+  --color-muted-soft:    var(--muted-soft);
+
+  --color-success:       var(--success);
+  --color-success-soft:  var(--success-soft);
+  --color-warning:       var(--warning);
+  --color-warning-soft:  var(--warning-soft);
+  --color-danger:        var(--danger);
+  --color-danger-soft:   var(--danger-soft);
+
+  --font-sans:           var(--font-site-sans);
+  --font-serif:          var(--font-site-serif);
+  --font-mono:           var(--font-site-mono);
 }
+
+/* ─── Forest color scale (Tailwind utilities) ─────────────────────────────── */
+
+@theme {
+  --color-forest-50:  #f0f7f4;
+  --color-forest-100: #d9ede5;
+  --color-forest-200: #b3dac9;
+  --color-forest-300: #7fbfa8;
+  --color-forest-400: #4da082;
+  --color-forest-500: #2d8263;
+  --color-forest-600: #1f6a4f;
+  --color-forest-700: #185540;
+  --color-forest-800: #134433;
+  --color-forest-900: #0e3327;
+
+  --color-clay-50:    #fdf4f2;
+  --color-clay-100:   #faeae7;
+  --color-clay-200:   #f5cfc9;
+  --color-clay-300:   #eda89e;
+  --color-clay-400:   #e07b6c;
+  --color-clay-500:   #cc5241;
+  --color-clay-600:   #bb3d2a;
+  --color-clay-700:   #8c2a1c;
+  --color-clay-800:   #6b1e13;
+  --color-clay-900:   #4a140c;
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
 
 html {
   scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   background-color: var(--background);
-  background-image:
-    radial-gradient(circle at top left, rgba(29, 78, 216, 0.05), transparent 28%),
-    radial-gradient(circle at top right, rgba(148, 163, 184, 0.08), transparent 26%),
-    linear-gradient(180deg, #fcfdff 0%, #f9fafb 55%, #f3f6fa 100%);
   color: var(--foreground);
   font-family: var(--font-site-sans);
-  line-height: 1.6;
+  line-height: 1.65;
 }
 
 * {
   box-sizing: border-box;
 }
 
-h1,
-h2,
-h3,
-h4 {
+/* Headings use serif by default — override with font-sans where needed */
+h1, h2, h3, h4 {
+  font-family: var(--font-site-serif);
   letter-spacing: -0.02em;
+  line-height: 1.08;
 }
 
-code,
-kbd,
-pre {
+/* UI labels and nav items should stay sans */
+h4 {
+  font-family: var(--font-site-sans);
+  letter-spacing: 0;
+}
+
+code, kbd, pre {
   font-family: var(--font-site-mono);
 }
 
 ::selection {
-  background: rgba(29, 78, 216, 0.16);
+  background: rgba(26, 92, 56, 0.18);
   color: var(--brand-strong);
 }
 
+/* ─── Components ──────────────────────────────────────────────────────────── */
+
 @layer components {
+
+  /* Flat architectural card — no radius, thin border */
   .surface-card {
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    background: rgba(255, 255, 255, 0.98);
-    box-shadow: var(--shadow-soft);
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
   }
 
+  /* Slightly inset panel — used inside cards */
   .surface-panel {
     border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    background: #ffffff;
-    box-shadow: var(--shadow-soft);
+    background: var(--surface-muted);
   }
 
+  /* Section label — replaces .eyebrow */
   .eyebrow {
-    font-size: 0.65rem;
+    font-family: var(--font-site-sans);
+    font-size: 0.625rem;
     font-weight: 700;
-    letter-spacing: 0.26em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
   }
 
+  /* Tabular numbers — tighter tracking for data */
   .metric-mono {
     font-family: var(--font-site-mono);
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
   }
 
+  /* Live indicator dot */
   .live-dot {
     position: relative;
     display: inline-flex;
-    height: 0.625rem;
-    width: 0.625rem;
+    height: 0.5rem;
+    width: 0.5rem;
     border-radius: 9999px;
-    background: var(--success);
+    background: #16a34a;
   }
 
   .live-dot::after {
@@ -129,37 +204,95 @@ pre {
     position: absolute;
     inset: 0;
     border-radius: 9999px;
-    background: color-mix(in srgb, var(--success) 35%, transparent);
-    animation: live-pulse 1.8s ease-out infinite;
+    background: rgba(22, 163, 74, 0.35);
+    animation: live-pulse 2s ease-out infinite;
   }
 
+  /* Skeleton loader */
   .skeleton-line {
-    border-radius: 9999px;
-    background: linear-gradient(90deg, rgba(226, 232, 240, 0.75), rgba(241, 245, 249, 1), rgba(226, 232, 240, 0.75));
+    border-radius: 2px;
+    background: linear-gradient(
+      90deg,
+      rgba(209, 213, 219, 0.6),
+      rgba(243, 244, 246, 1),
+      rgba(209, 213, 219, 0.6)
+    );
     background-size: 200% 100%;
     animation: shimmer 1.4s linear infinite;
   }
+
+  /* Progress bar track */
+  .progress-track {
+    height: 2px;
+    width: 100%;
+    background: var(--line-strong);
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--brand);
+    transition: width 0.5s ease;
+  }
+
+  /* Pill badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    font-family: var(--font-site-sans);
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+  }
+
+  .badge-forest {
+    border-color: var(--brand-soft);
+    background: var(--brand-subtle);
+    color: var(--brand);
+  }
+
+  .badge-clay {
+    border-color: var(--accent-soft);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .badge-live {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+    color: #15803d;
+  }
+
+  /* Dark surface */
+  .surface-dark {
+    background: var(--brand-strong);
+    color: #ffffff;
+  }
+
 }
 
+/* ─── Animations ──────────────────────────────────────────────────────────── */
+
 @keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+  0%   { background-position:  200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 @keyframes live-pulse {
-  0% {
-    transform: scale(1);
-    opacity: 0.8;
-  }
-  70% {
-    transform: scale(2.6);
-    opacity: 0;
-  }
-  100% {
-    opacity: 0;
-  }
+  0%   { transform: scale(1);   opacity: 0.8; }
+  70%  { transform: scale(2.8); opacity: 0;   }
+  100% { opacity: 0; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.4s ease both;
 }

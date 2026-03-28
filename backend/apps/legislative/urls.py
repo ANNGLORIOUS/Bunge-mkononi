@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    BillProcessingAdminAPIView,
     AdminMetricsAPIView,
     BillViewSet,
     BillVoteSummaryAPIView,
@@ -39,6 +40,7 @@ router.register("logs", SystemLogViewSet, basename="logs")
 urlpatterns = [
     path("health/", HealthCheckAPIView.as_view(), name="health"),
     path("dashboard/", DashboardAPIView.as_view(), name="dashboard"),
+    path("bills/process/", BillProcessingAdminAPIView.as_view(), name="bill-processing-admin"),
     path(
         "bills/<str:bill_id>/votes/summary/",
         BillVoteSummaryAPIView.as_view(),

@@ -1,16 +1,33 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
+from queue import Empty, Queue
+from threading import Lock, Thread
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
+from django.db import close_old_connections
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
 from django.utils.text import slugify
 
-from .document_processing import PDFDocumentProcessingError, analyze_pdf_document, resolve_bill_pdf_url
+from .ai import (
+    CohereConfigurationError,
+    CohereServiceError,
+    build_bill_ai_source_hash,
+    cohere_enabled,
+    generate_bill_ai_artifacts,
+    semantic_rank_bills,
+)
+from .document_processing import (
+    PDFDocumentProcessingError,
+    analyze_pdf_document,
+    fetch_pdf_source_fingerprint,
+    resolve_bill_pdf_url,
+)
 from .africastalking import (
     AfricaTalkingConfigurationError,
     AfricaTalkingError,
@@ -42,6 +59,14 @@ from .models import (
     WebhookReceipt,
     SystemLog,
 )
+
+
+logger = logging.getLogger(__name__)
+_scheduled_bill_document_jobs: set[str] = set()
+_scheduled_bill_document_jobs_lock = Lock()
+_bill_document_job_queue: Queue[dict[str, object] | None] = Queue()
+_bill_document_workers_started = False
+_bill_document_worker_count = 1
 
 
 SMS_SUBSCRIPTION_KEYWORDS = {"SUBSCRIBE", "TRACK", "FOLLOW", "JOIN"}
@@ -517,10 +542,35 @@ def _build_sms_help_message(language: str) -> str:
     )
 
 
+def _preferred_ai_summary(bill: Bill) -> str:
+    ai_summary = str(getattr(bill, "ai_summary", "") or "").strip()
+    if ai_summary:
+        return ai_summary
+    return str(bill.summary or "").strip()
+
+
+def _preferred_ai_key_points(bill: Bill) -> list[str]:
+    ai_key_points = getattr(bill, "ai_key_points", [])
+    if isinstance(ai_key_points, list):
+        normalized_ai_points = [str(point).strip() for point in ai_key_points if str(point).strip()]
+        if normalized_ai_points:
+            return normalized_ai_points
+
+    key_points = bill.key_points if isinstance(bill.key_points, list) else []
+    return [str(point).strip() for point in key_points if str(point).strip()]
+
+
+def _preferred_ai_timeline(bill: Bill) -> list:
+    ai_timeline = getattr(bill, "ai_timeline", [])
+    if isinstance(ai_timeline, list) and ai_timeline:
+        return ai_timeline
+    return bill.timeline if isinstance(bill.timeline, list) else []
+
+
 def _build_bill_status_message(bill: Bill, language: str) -> str:
     petition = getattr(bill, "petition", None)
     signatures = petition.signature_count if petition else 0
-    summary = _truncate_text(str(bill.summary or ""), 140)
+    summary = _truncate_text(_preferred_ai_summary(bill), 140)
     return (
         f"{_translate(language, 'status_prefix')}: {bill.status}\n"
         f"Bill ID: {bill.id}\n"
@@ -532,8 +582,8 @@ def _build_bill_status_message(bill: Bill, language: str) -> str:
 
 
 def _build_bill_document_summary_message(bill: Bill, language: str) -> str:
-    document_summary = _truncate_text(str(bill.document_text or bill.summary or ""), 220)
-    key_points = bill.key_points if isinstance(bill.key_points, list) else []
+    document_summary = _truncate_text(_preferred_ai_summary(bill) or str(bill.document_text or bill.summary or ""), 220)
+    key_points = _preferred_ai_key_points(bill)
     lines = [
         f"{_translate(language, 'summary_prefix')}: {bill.title}",
         f"Bill ID: {bill.id}",
@@ -648,7 +698,7 @@ def _build_bill_search_message(bills: list[Bill], language: str, query: str) -> 
 
 
 def _build_bill_keypoints_message(bill: Bill, language: str) -> str:
-    key_points = bill.key_points if isinstance(bill.key_points, list) else []
+    key_points = _preferred_ai_key_points(bill)
     lines = [
         f"{_translate(language, 'summary_prefix')}: {bill.title}",
         f"Bill ID: {bill.id}",
@@ -664,7 +714,7 @@ def _build_bill_keypoints_message(bill: Bill, language: str) -> str:
 
 
 def _build_bill_timeline_message(bill: Bill, language: str) -> str:
-    timeline = bill.timeline if isinstance(bill.timeline, list) else []
+    timeline = _preferred_ai_timeline(bill)
     if not timeline:
         return (
             f"{_translate(language, 'summary_prefix')}: {bill.title}\n"
@@ -787,7 +837,7 @@ def _update_subscription_state(
         subscription.consent_source = consent_source
         fields_to_update.append("consent_source")
     if fields_to_update:
-        subscription.save(update_fields=list(dict.fromkeys(fields_to_update + ["updated_at"])))
+        subscription.save(update_fields=list(dict.fromkeys(fields_to_update)))
 
     bill = subscription.bill
     if bill is not None and subscription.scope == SubscriptionScope.BILL:
@@ -870,12 +920,13 @@ def _bill_matches_search_query(bill: Bill, query: str) -> bool:
         bill.id,
         bill.title,
         bill.summary,
+        getattr(bill, "ai_summary", ""),
         bill.category,
         bill.status,
         bill.sponsor,
         bill.parliament_url,
         bill.document_text,
-        " ".join(str(point) for point in bill.key_points or []),
+        " ".join(_preferred_ai_key_points(bill)),
     ]
     if any(search in _normalized_key(str(value)) for value in haystacks if str(value).strip()):
         return True
@@ -888,6 +939,12 @@ def _bill_search_results(query: str, limit: int = 5) -> list[Bill]:
     if not search:
         return []
     queryset = Bill.objects.select_related("petition")
+    semantic_bill_ids = semantic_rank_bills(search, list(queryset), top_n=limit)
+    if semantic_bill_ids:
+        bill_map = {bill.id: bill for bill in queryset if bill.id in semantic_bill_ids}
+        ordered_matches = [bill_map[bill_id] for bill_id in semantic_bill_ids if bill_id in bill_map]
+        if ordered_matches:
+            return ordered_matches[:limit]
     matches: list[Bill] = []
     for bill in queryset:
         if _bill_matches_search_query(bill, search):
@@ -1390,11 +1447,16 @@ def _document_state_from_bill(bill: Bill, source_url: str | None = None) -> dict
         "status": bill.document_status,
         "method": bill.document_method,
         "sourceUrl": source_url or bill.document_source_url or "",
+        "sourceFingerprint": bill.document_source_fingerprint,
         "text": bill.document_text,
         "pages": bill.document_pages if isinstance(bill.document_pages, list) else [],
         "pageCount": bill.document_page_count,
         "wordCount": bill.document_word_count,
         "error": bill.document_error,
+        "aiSummary": bill.ai_summary,
+        "aiKeyPoints": bill.ai_key_points if isinstance(bill.ai_key_points, list) else [],
+        "aiTimeline": bill.ai_timeline if isinstance(bill.ai_timeline, list) else [],
+        "aiError": bill.ai_error,
     }
 
 
@@ -1407,6 +1469,7 @@ def _save_bill_document_state(
     bill.document_status = str(payload.get("status") or DocumentProcessingStatus.UNAVAILABLE)
     bill.document_method = str(payload.get("method") or "")
     bill.document_source_url = source_url
+    bill.document_source_fingerprint = str(payload.get("sourceFingerprint") or "")
     bill.document_text = str(payload.get("text") or "")
     pages = payload.get("pages")
     bill.document_pages = pages if isinstance(pages, list) else []
@@ -1428,6 +1491,7 @@ def _save_bill_document_state(
             "document_status",
             "document_method",
             "document_source_url",
+            "document_source_fingerprint",
             "document_text",
             "document_pages",
             "document_error",
@@ -1440,10 +1504,63 @@ def _save_bill_document_state(
     return bill
 
 
+def _refresh_bill_ai_artifacts(bill: Bill, *, force: bool = False) -> None:
+    if not cohere_enabled():
+        return
+
+    if bill.document_status != DocumentProcessingStatus.READY:
+        return
+
+    if not str(bill.document_text or "").strip():
+        return
+
+    source_hash = build_bill_ai_source_hash(bill)
+    if (
+        not force
+        and bill.ai_source_hash == source_hash
+        and str(bill.ai_summary or "").strip()
+        and isinstance(bill.ai_key_points, list)
+        and bill.ai_key_points
+    ):
+        return
+
+    try:
+        artifacts = generate_bill_ai_artifacts(bill)
+    except (CohereConfigurationError, CohereServiceError) as exc:
+        bill.ai_error = str(exc)
+        bill.ai_processed_at = timezone.now()
+        bill.save(update_fields=["ai_error", "ai_processed_at", "updated_at"])
+        return
+
+    bill.ai_summary = str(artifacts.get("summary") or "")
+    ai_key_points = artifacts.get("keyPoints")
+    bill.ai_key_points = ai_key_points if isinstance(ai_key_points, list) else []
+    ai_timeline = artifacts.get("timeline")
+    bill.ai_timeline = ai_timeline if isinstance(ai_timeline, list) else []
+    bill.ai_source_hash = str(artifacts.get("sourceHash") or source_hash)
+    bill.ai_error = ""
+    bill.ai_processed_at = timezone.now()
+    bill.save(
+        update_fields=[
+            "ai_summary",
+            "ai_key_points",
+            "ai_timeline",
+            "ai_source_hash",
+            "ai_error",
+            "ai_processed_at",
+            "updated_at",
+        ]
+    )
+
+
 def process_bill_document(bill: Bill, force: bool = False) -> dict:
     source_url = resolve_bill_pdf_url(bill.full_text_url, bill.parliament_url)
     if not source_url:
         return _document_state_from_bill(bill)
+
+    current_source_fingerprint = ""
+    if not force:
+        current_source_fingerprint = fetch_pdf_source_fingerprint(source_url)
 
     if (
         not force
@@ -1454,7 +1571,15 @@ def process_bill_document(bill: Bill, force: bool = False) -> dict:
             DocumentProcessingStatus.FAILED,
         }
         and bill.document_processed_at is not None
+        and (
+            (
+                current_source_fingerprint
+                and bill.document_source_fingerprint == current_source_fingerprint
+            )
+            or not current_source_fingerprint
+        )
     ):
+        _refresh_bill_ai_artifacts(bill, force=force)
         return _document_state_from_bill(bill, source_url=source_url)
 
     try:
@@ -1472,7 +1597,208 @@ def process_bill_document(bill: Bill, force: bool = False) -> dict:
         }
 
     _save_bill_document_state(bill, result, source_url)
+    _refresh_bill_ai_artifacts(bill, force=True)
     return result
+
+
+def _bill_needs_ai_refresh(bill: Bill) -> bool:
+    if not cohere_enabled():
+        return False
+
+    if bill.document_status != DocumentProcessingStatus.READY:
+        return False
+
+    if not str(bill.document_text or "").strip():
+        return False
+
+    source_hash = build_bill_ai_source_hash(bill)
+    return not (
+        bill.ai_source_hash == source_hash
+        and str(bill.ai_summary or "").strip()
+        and isinstance(bill.ai_key_points, list)
+        and bill.ai_key_points
+    )
+
+
+def _should_process_bill_document(
+    bill: Bill,
+    *,
+    force: bool = False,
+    check_for_updates: bool = False,
+) -> bool:
+    source_url = resolve_bill_pdf_url(bill.full_text_url, bill.parliament_url)
+    if not source_url:
+        return False
+
+    should_process = force
+    if not should_process and bill.document_processed_at is None:
+        should_process = True
+    if not should_process and bill.document_source_url != source_url:
+        should_process = True
+    if not should_process and bill.document_status in {
+        DocumentProcessingStatus.UNAVAILABLE,
+        DocumentProcessingStatus.NEEDS_OCR,
+        DocumentProcessingStatus.FAILED,
+    }:
+        should_process = True
+    if not should_process and check_for_updates:
+        should_process = True
+    if not should_process and _bill_needs_ai_refresh(bill):
+        should_process = True
+
+    return should_process
+
+
+def ensure_bill_document_processed(
+    bill: Bill,
+    *,
+    force: bool = False,
+    check_for_updates: bool = False,
+) -> bool:
+    if not _should_process_bill_document(
+        bill,
+        force=force,
+        check_for_updates=check_for_updates,
+    ):
+        return False
+
+    process_bill_document(bill, force=force)
+    return True
+
+
+def _run_scheduled_bill_document_job(
+    bill_id: str,
+    *,
+    force: bool = False,
+    check_for_updates: bool = False,
+) -> None:
+    close_old_connections()
+    try:
+        bill = Bill.objects.filter(pk=bill_id).first()
+        if not bill:
+            return
+        ensure_bill_document_processed(
+            bill,
+            force=force,
+            check_for_updates=check_for_updates,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Background bill document processing failed for %s", bill_id)
+    finally:
+        with _scheduled_bill_document_jobs_lock:
+            _scheduled_bill_document_jobs.discard(bill_id)
+        close_old_connections()
+
+
+def _bill_document_worker_loop() -> None:
+    while True:
+        job = _bill_document_job_queue.get()
+        try:
+            if job is None:
+                return
+            _run_scheduled_bill_document_job(
+                str(job["bill_id"]),
+                force=bool(job.get("force", False)),
+                check_for_updates=bool(job.get("check_for_updates", False)),
+            )
+        finally:
+            _bill_document_job_queue.task_done()
+
+
+def _ensure_bill_document_workers_started() -> None:
+    global _bill_document_workers_started
+
+    with _scheduled_bill_document_jobs_lock:
+        if _bill_document_workers_started:
+            return
+        _bill_document_workers_started = True
+
+    for index in range(_bill_document_worker_count):
+        worker = Thread(
+            target=_bill_document_worker_loop,
+            daemon=True,
+            name=f"bill-doc-worker-{index + 1}",
+        )
+        worker.start()
+
+
+def schedule_bill_document_processing(
+    bill: Bill,
+    *,
+    force: bool = False,
+    check_for_updates: bool = False,
+) -> bool:
+    if not _should_process_bill_document(
+        bill,
+        force=force,
+        check_for_updates=check_for_updates,
+    ):
+        return False
+
+    bill_id = str(bill.pk)
+    with _scheduled_bill_document_jobs_lock:
+        if bill_id in _scheduled_bill_document_jobs:
+            return False
+        _scheduled_bill_document_jobs.add(bill_id)
+
+    _ensure_bill_document_workers_started()
+    _bill_document_job_queue.put(
+        {
+            "bill_id": bill_id,
+            "force": force,
+            "check_for_updates": check_for_updates,
+        }
+    )
+    return True
+
+
+def get_scheduled_bill_document_job_count() -> int:
+    with _scheduled_bill_document_jobs_lock:
+        return len(_scheduled_bill_document_jobs)
+
+
+def get_scheduled_bill_document_job_ids() -> list[str]:
+    with _scheduled_bill_document_jobs_lock:
+        return sorted(_scheduled_bill_document_jobs)
+
+
+def clear_scheduled_bill_document_jobs() -> dict[str, int]:
+    dequeued_bill_ids: set[str] = set()
+
+    while True:
+        try:
+            queued_job = _bill_document_job_queue.get_nowait()
+        except Empty:
+            break
+
+        try:
+            if queued_job is None:
+                continue
+            bill_id = str(queued_job.get("bill_id") or "").strip()
+            if bill_id:
+                dequeued_bill_ids.add(bill_id)
+        finally:
+            _bill_document_job_queue.task_done()
+
+    with _scheduled_bill_document_jobs_lock:
+        for bill_id in dequeued_bill_ids:
+            _scheduled_bill_document_jobs.discard(bill_id)
+        remaining_job_count = len(_scheduled_bill_document_jobs)
+
+    return {
+        "dequeuedJobs": len(dequeued_bill_ids),
+        "activeJobs": remaining_job_count,
+        "queuedJobs": remaining_job_count,
+    }
+
+
+def ensure_bill_documents_processed(
+    bills: list[Bill] | tuple[Bill, ...],
+    *,
+    check_for_updates: bool = False,
+) -> None:
+    for bill in bills:
+        ensure_bill_document_processed(bill, check_for_updates=check_for_updates)
 
 
 def _metadata_value(payload: dict | None, *keys: str) -> str:
@@ -1592,7 +1918,7 @@ def _truncate_text(value: str, limit: int = 120) -> str:
 def _format_bill_sms_summary(bill: Bill) -> str:
     petition = getattr(bill, "petition", None)
     signatures = petition.signature_count if petition else 0
-    summary = _truncate_text(str(bill.summary or ""), 120)
+    summary = _truncate_text(_preferred_ai_summary(bill), 120)
     sponsor = bill.sponsor or "N/A"
     lines = [
         f"Status: {bill.status}",

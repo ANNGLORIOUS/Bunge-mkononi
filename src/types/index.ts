@@ -17,7 +17,7 @@ export type MessageLanguage = 'en' | 'sw';
 export type RepresentativeRole = 'MP' | 'MCA' | 'Senator';
 export type RepresentativeScrapeTarget = 'all' | 'MP' | 'Senator';
 export type BillDocumentStatus = 'unavailable' | 'needs_ocr' | 'ready' | 'failed';
-export type BillDocumentMethod = 'text' | 'ocr';
+export type BillDocumentMethod = 'text' | 'ai' | 'ocr';
 
 export type BillDocumentBlock =
   | {
@@ -156,6 +156,24 @@ export interface BillTimelineEntry {
   completed: boolean;
 }
 
+export interface BillAiTimelineEntry {
+  label: string;
+  description: string;
+}
+
+export interface BillQuestionExcerpt {
+  pageNumber: number | null;
+  text: string;
+  score: number;
+}
+
+export interface BillQuestionResponse {
+  billId: string;
+  question: string;
+  answer: string;
+  excerpts: BillQuestionExcerpt[];
+}
+
 export interface Bill {
   id: string;
   title: string;
@@ -167,6 +185,11 @@ export interface Bill {
   dateIntroduced: string;
   isHot?: boolean;
   fullTextUrl?: string;
+  aiSummary?: string;
+  aiKeyPoints?: string[];
+  aiTimeline?: BillAiTimelineEntry[];
+  aiError?: string;
+  aiGeneratedAt?: string | null;
   documentStatus?: BillDocumentStatus;
   documentMethod?: BillDocumentMethod | '';
   documentSourceUrl?: string;
@@ -193,6 +216,11 @@ export interface Bill {
 
 export interface BillDetail extends Bill {
   fullTextUrl: string;
+  aiSummary: string;
+  aiKeyPoints: string[];
+  aiTimeline: BillAiTimelineEntry[];
+  aiError: string;
+  aiGeneratedAt: string | null;
   documentStatus: BillDocumentStatus;
   documentMethod: BillDocumentMethod | '';
   documentSourceUrl: string;
@@ -303,6 +331,62 @@ export interface RepresentativeScrapeAllSummary {
 }
 
 export type RepresentativeScrapeSummary = RepresentativeScrapeAllSummary | RepresentativeScrapeRoleSummary;
+
+export type BillProcessingScope = 'missing_documents' | 'missing_ai' | 'failed' | 'all';
+export type BillProcessingDetailScope = 'eligible' | 'queued' | 'ready' | 'missing_documents' | 'missing_ai' | 'failed';
+
+export interface BillProcessingStatus {
+  aiEnabled: boolean;
+  totalBills: number;
+  eligibleBills: number;
+  readyDocuments: number;
+  missingDocuments: number;
+  missingAi: number;
+  failedDocuments: number;
+  queuedJobs: number;
+}
+
+export interface BillProcessingDetailItem {
+  id: string;
+  title: string;
+  category: BillCategory;
+  sponsor?: string;
+  currentStage: BillStatus;
+  documentStatus: BillDocumentStatus;
+  documentProcessedAt?: string | null;
+  aiSummary?: string;
+  aiError?: string;
+  aiGeneratedAt?: string | null;
+  fullTextUrl?: string;
+  parliamentUrl?: string;
+  updatedAt?: string;
+}
+
+export interface BillProcessingDetailResponse {
+  scope: BillProcessingDetailScope;
+  label: string;
+  description: string;
+  count: number;
+  limit: number | null;
+  results: BillProcessingDetailItem[];
+}
+
+export interface BillProcessingRunSummary {
+  scope: BillProcessingScope;
+  limit: number | null;
+  matchedBills: number;
+  queuedBills: number;
+  alreadyQueuedBills: number;
+  queuedJobs: number;
+  message: string;
+}
+
+export interface BillProcessingQueueClearSummary {
+  dequeuedJobs: number;
+  activeJobs: number;
+  queuedJobs: number;
+  message: string;
+}
 
 export interface SmsWebhookCallbackUrls {
   ussd: string;

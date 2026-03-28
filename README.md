@@ -70,6 +70,40 @@ cd backend
 python manage.py process_bill_documents
 ```
 
+## Cohere AI Integration
+
+The backend can now use Cohere for:
+
+- semantic bill search across the bill list and SMS `SEARCH`
+- AI-generated bill summaries, key points, and timeline notes from extracted bill text
+- AI vision extraction for scanned PDFs before falling back to local OCR
+- bill-level question answering from the structured document text
+
+### Backend Env
+
+Add these in `backend/.env`:
+
+```bash
+COHERE_API_KEY=your-cohere-api-key
+COHERE_CHAT_MODEL=command-a-03-2025
+COHERE_VISION_MODEL=command-a-vision-07-2025
+COHERE_RERANK_MODEL=rerank-v4.0-fast
+COHERE_REQUEST_TIMEOUT=30
+AI_OCR_PAGE_BATCH_SIZE=5
+```
+
+### Backfill Existing Bills
+
+After setting the Cohere env vars, refresh bill documents so the stored AI fields are generated:
+
+```bash
+cd backend
+python manage.py process_bill_documents --force
+```
+
+If a bill already has extracted text, the same command now refreshes its stored AI summary, key points, and timeline alongside the document state.
+For scanned PDFs, the pipeline now tries Cohere Vision on rendered page images before it falls back to OCRmyPDF.
+
 ## Frontend to Backend Wiring
 
 The frontend reads live data from the Django API.
@@ -91,6 +125,7 @@ NEXT_PUBLIC_API_BASE_URL=https://bunge-mkononi.onrender.com/api
 - `GET /api/dashboard/`
 - `GET /api/bills/`
 - `GET /api/bills/<id>/`
+- `POST /api/bills/<id>/ask/`
 - `GET /api/representatives/?billId=<id>`
 - `GET /api/counties/?billId=<id>`
 - `GET /api/bills/<id>/votes/`

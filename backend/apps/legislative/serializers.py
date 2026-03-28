@@ -200,6 +200,11 @@ class BillSerializer(serializers.ModelSerializer):
     isHot = serializers.BooleanField(source="is_hot", required=False)
     fullTextUrl = serializers.URLField(source="full_text_url", allow_blank=True, required=False)
     keyPoints = serializers.JSONField(source="key_points", required=False)
+    aiSummary = serializers.CharField(source="ai_summary", read_only=True)
+    aiKeyPoints = serializers.JSONField(source="ai_key_points", read_only=True)
+    aiTimeline = serializers.JSONField(source="ai_timeline", read_only=True)
+    aiError = serializers.CharField(source="ai_error", read_only=True)
+    aiGeneratedAt = serializers.DateTimeField(source="ai_processed_at", read_only=True, allow_null=True)
     subscriberCount = serializers.IntegerField(source="subscriber_count", required=False)
     currentStage = serializers.CharField(source="status", read_only=True)
     parliamentUrl = serializers.URLField(
@@ -232,6 +237,11 @@ class BillSerializer(serializers.ModelSerializer):
             "isHot",
             "fullTextUrl",
             "keyPoints",
+            "aiSummary",
+            "aiKeyPoints",
+            "aiTimeline",
+            "aiError",
+            "aiGeneratedAt",
             "timeline",
             "subscriberCount",
             "currentStage",
@@ -401,6 +411,104 @@ class ScrapeTriggerSerializer(serializers.Serializer):
     )
 
 
+class BillProcessingTriggerSerializer(serializers.Serializer):
+    scope = serializers.ChoiceField(
+        choices=["missing_documents", "missing_ai", "failed", "all"],
+        default="missing_documents",
+        help_text="Which bills to queue for background AI/document processing.",
+    )
+    limit = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        max_value=500,
+        help_text="Optional cap on how many bills to queue in one request.",
+    )
+
+
+class BillProcessingDetailQuerySerializer(serializers.Serializer):
+    detail = serializers.ChoiceField(
+        choices=["eligible", "queued", "ready", "missing_documents", "missing_ai", "failed"],
+        required=False,
+        help_text="Optional detail scope for listing matching bills in the admin warmup console.",
+    )
+    limit = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        max_value=100,
+        help_text="Optional cap on how many matching bills to return for a detail query.",
+    )
+
+
+class BillProcessingStatusSerializer(serializers.Serializer):
+    aiEnabled = serializers.BooleanField()
+    totalBills = serializers.IntegerField()
+    eligibleBills = serializers.IntegerField()
+    readyDocuments = serializers.IntegerField()
+    missingDocuments = serializers.IntegerField()
+    missingAi = serializers.IntegerField()
+    failedDocuments = serializers.IntegerField()
+    queuedJobs = serializers.IntegerField()
+
+
+class BillProcessingDetailItemSerializer(serializers.ModelSerializer):
+    currentStage = serializers.CharField(source="status", read_only=True)
+    fullTextUrl = serializers.URLField(source="full_text_url", allow_blank=True, required=False)
+    parliamentUrl = serializers.URLField(source="parliament_url", allow_blank=True, required=False)
+    documentStatus = serializers.CharField(source="document_status", read_only=True)
+    documentProcessedAt = serializers.DateTimeField(source="document_processed_at", allow_null=True, read_only=True)
+    aiSummary = serializers.CharField(source="ai_summary", read_only=True)
+    aiError = serializers.CharField(source="ai_error", read_only=True)
+    aiGeneratedAt = serializers.DateTimeField(source="ai_processed_at", allow_null=True, read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+
+    class Meta:
+        model = Bill
+        fields = [
+            "id",
+            "title",
+            "category",
+            "sponsor",
+            "currentStage",
+            "documentStatus",
+            "documentProcessedAt",
+            "aiSummary",
+            "aiError",
+            "aiGeneratedAt",
+            "fullTextUrl",
+            "parliamentUrl",
+            "updatedAt",
+        ]
+        read_only_fields = fields
+
+
+class BillProcessingDetailSerializer(serializers.Serializer):
+    scope = serializers.CharField()
+    label = serializers.CharField()
+    description = serializers.CharField()
+    count = serializers.IntegerField()
+    limit = serializers.IntegerField(allow_null=True)
+    results = BillProcessingDetailItemSerializer(many=True)
+
+
+class BillProcessingRunSerializer(serializers.Serializer):
+    scope = serializers.CharField()
+    limit = serializers.IntegerField(allow_null=True)
+    matchedBills = serializers.IntegerField()
+    queuedBills = serializers.IntegerField()
+    alreadyQueuedBills = serializers.IntegerField()
+    queuedJobs = serializers.IntegerField()
+    message = serializers.CharField()
+
+
+class BillProcessingQueueClearSerializer(serializers.Serializer):
+    dequeuedJobs = serializers.IntegerField()
+    activeJobs = serializers.IntegerField()
+    queuedJobs = serializers.IntegerField()
+    message = serializers.CharField()
+
+
 class BillVoteCountyBreakdownSerializer(serializers.Serializer):
     county = serializers.CharField()
     yes = serializers.IntegerField()
@@ -457,3 +565,14 @@ class ScrapeVotesTriggerSerializer(serializers.Serializer):
         min_value=5,
         max_value=120,
     )
+
+
+class BillQuestionRequestSerializer(serializers.Serializer):
+    question = serializers.CharField(min_length=4, max_length=500)
+
+
+class BillQuestionResponseSerializer(serializers.Serializer):
+    billId = serializers.CharField()
+    question = serializers.CharField()
+    answer = serializers.CharField()
+    excerpts = serializers.ListField(child=serializers.DictField(), required=False)

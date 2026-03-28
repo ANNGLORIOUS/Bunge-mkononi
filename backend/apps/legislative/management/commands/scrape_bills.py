@@ -14,7 +14,7 @@ from apps.legislative.scrapers import (
 
 
 class Command(BaseCommand):
-    help = "Scrape bills from the Kenyan Parliament website and upsert them into the database."
+    help = "Scrape bills from the Kenyan Parliament website and upsert bill metadata into the database."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -34,18 +34,25 @@ class Command(BaseCommand):
             default=False,
             help="Parse and print bills without writing to the database.",
         )
+        parser.add_argument(
+            "--max-pages",
+            type=int,
+            default=25,
+            help="Maximum number of paginated listing pages to fetch (default: 25).",
+        )
 
     def handle(self, *args, **options):
         url = options["url"]
         timeout = options["timeout"]
         dry_run = options["dry_run"]
+        max_pages = options["max_pages"]
 
         self.stdout.write(self.style.MIGRATE_HEADING(f"Scraping bills from: {url}"))
 
         if dry_run:
             self.stdout.write(self.style.WARNING("DRY RUN - no database writes."))
             try:
-                pages, fetch_errors = fetch_bill_pages(url, timeout=timeout)
+                pages, fetch_errors = fetch_bill_pages(url, timeout=timeout, max_pages=max_pages)
                 bills = parse_bill_pages(pages)
             except Exception as exc:  # noqa: BLE001
                 raise CommandError(f"Scrape failed: {exc}") from exc
@@ -72,7 +79,12 @@ class Command(BaseCommand):
             return
 
         try:
-            summary = scrape_parliament_bills(url=url, timeout=timeout)
+            summary = scrape_parliament_bills(
+                url=url,
+                timeout=timeout,
+                max_pages=max_pages,
+                progress_callback=self.stdout.write,
+            )
         except Exception as exc:  # noqa: BLE001
             raise CommandError(f"Scrape failed: {exc}") from exc
 
@@ -83,6 +95,11 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"pages fetched       : {pages_fetched}"))
         self.stdout.write(self.style.SUCCESS(f"created             : {summary['created']}"))
         self.stdout.write(self.style.SUCCESS(f"updated             : {summary['updated']}"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"documents processed : {'yes' if summary.get('documents_processed', True) else 'no'}"
+            )
+        )
 
         processed_bills = summary.get("processed_bills", [])
         if processed_bills:

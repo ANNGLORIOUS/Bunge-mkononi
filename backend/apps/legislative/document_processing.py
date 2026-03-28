@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -11,7 +13,10 @@ from urllib.parse import urlparse
 
 import requests
 
+from .ai import CohereConfigurationError, CohereServiceError, extract_text_from_page_images
+
 PDF_TEXT_MIN_WORDS = int(os.getenv("PDF_TEXT_MIN_WORDS", "80"))
+AI_OCR_PAGE_BATCH_SIZE = int(os.getenv("AI_OCR_PAGE_BATCH_SIZE", "5"))
 
 
 class PDFDocumentProcessingError(RuntimeError):
@@ -40,14 +45,58 @@ def resolve_bill_pdf_url(full_text_url: str | None = None, parliament_url: str |
     return None
 
 
-def _download_pdf(source_url: str, timeout: int = 60) -> Path:
+def _request_headers() -> dict[str, str]:
+    return {
+        "User-Agent": "Mozilla/5.0 (compatible; BungeMkononiBot/1.0)",
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+    }
+
+
+def _build_pdf_source_fingerprint(source_url: str, *, etag: str = "", last_modified: str = "", content_length: str = "") -> str:
+    normalized_parts = {
+        "source_url": str(source_url or "").strip(),
+        "etag": str(etag or "").strip(),
+        "last_modified": str(last_modified or "").strip(),
+        "content_length": str(content_length or "").strip(),
+    }
+    if not any(
+        [
+            normalized_parts["etag"],
+            normalized_parts["last_modified"],
+            normalized_parts["content_length"],
+        ]
+    ):
+        return ""
+    return hashlib.sha256(json.dumps(normalized_parts, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def fetch_pdf_source_fingerprint(source_url: str, timeout: int = 30) -> str:
+    try:
+        response = requests.head(
+            source_url,
+            headers=_request_headers(),
+            timeout=timeout,
+            allow_redirects=True,
+        )
+    except requests.RequestException:
+        return ""
+
+    if response.status_code >= 400:
+        return ""
+
+    return _build_pdf_source_fingerprint(
+        response.url or source_url,
+        etag=response.headers.get("ETag", ""),
+        last_modified=response.headers.get("Last-Modified", ""),
+        content_length=response.headers.get("Content-Length", ""),
+    )
+
+
+def _download_pdf(source_url: str, timeout: int = 60) -> tuple[Path, str]:
     try:
         response = requests.get(
             source_url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; BungeMkononiBot/1.0)",
-                "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
-            },
+            headers=_request_headers(),
             timeout=timeout,
         )
         response.raise_for_status()
@@ -63,7 +112,8 @@ def _download_pdf(source_url: str, timeout: int = 60) -> Path:
     finally:
         temp_file.close()
 
-    return Path(temp_file.name)
+    content_fingerprint = hashlib.sha256(response.content).hexdigest()
+    return Path(temp_file.name), content_fingerprint
 
 
 def _run_command(args: list[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
@@ -252,10 +302,97 @@ def _ocr_pdf_with_ocrmypdf(pdf_path: Path) -> str:
         return _extract_pdf_text(output_pdf)
 
 
+def _render_pdf_pages_to_pngs(pdf_path: Path) -> list[tuple[int, bytes]]:
+    if not shutil.which("pdftoppm"):
+        raise PDFDocumentProcessingError("pdftoppm is not installed.")
+
+    with tempfile.TemporaryDirectory(prefix="bunge-pdf-pages-") as temp_dir:
+        output_prefix = Path(temp_dir) / "page"
+        result = _run_command(
+            [
+                "pdftoppm",
+                "-png",
+                "-r",
+                "180",
+                str(pdf_path),
+                str(output_prefix),
+            ],
+            timeout=600,
+        )
+        if result.returncode != 0:
+            raise PDFDocumentProcessingError(result.stderr.strip() or "Unable to render PDF pages into images.")
+
+        image_files = sorted(
+            Path(temp_dir).glob("page-*.png"),
+            key=lambda path: int(re.search(r"-(\d+)$", path.stem).group(1)) if re.search(r"-(\d+)$", path.stem) else 0,
+        )
+        if not image_files:
+            raise PDFDocumentProcessingError("No page images were rendered from the PDF.")
+
+        pages: list[tuple[int, bytes]] = []
+        for image_file in image_files:
+            match = re.search(r"-(\d+)$", image_file.stem)
+            if not match:
+                continue
+            page_number = int(match.group(1))
+            pages.append((page_number, image_file.read_bytes()))
+
+        if not pages:
+            raise PDFDocumentProcessingError("Rendered PDF images could not be indexed by page number.")
+        return pages
+
+
+def _structure_pages_from_ai_extraction(extracted_pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pages: list[dict[str, Any]] = []
+    for item in extracted_pages:
+        try:
+            page_number = int(item.get("pageNumber"))
+        except (TypeError, ValueError):
+            continue
+        page_text = str(item.get("text") or "").strip()
+        if not page_text:
+            pages.append({"pageNumber": page_number, "blocks": []})
+            continue
+        pages.append(_structure_page_text(page_text, page_number))
+    return pages
+
+
+def _extract_pdf_text_with_ai_vision(pdf_path: Path) -> tuple[str, list[dict[str, Any]]]:
+    try:
+        page_images = _render_pdf_pages_to_pngs(pdf_path)
+    except PDFDocumentProcessingError:
+        raise
+
+    extracted_page_items: list[dict[str, Any]] = []
+    for index in range(0, len(page_images), AI_OCR_PAGE_BATCH_SIZE):
+        batch = page_images[index : index + AI_OCR_PAGE_BATCH_SIZE]
+        try:
+            extracted_page_items.extend(extract_text_from_page_images(batch))
+        except (CohereConfigurationError, CohereServiceError) as exc:
+            raise PDFDocumentProcessingError(str(exc)) from exc
+
+    if not extracted_page_items:
+        raise PDFDocumentProcessingError("Cohere Vision returned no readable page text.")
+
+    page_text_map = {
+        int(item["pageNumber"]): str(item.get("text") or "")
+        for item in extracted_page_items
+        if item.get("pageNumber") is not None
+    }
+    ordered_pages = [
+        {"pageNumber": page_number, "text": page_text_map.get(page_number, "")}
+        for page_number, _image_bytes in page_images
+    ]
+    extracted_text = "\f".join(str(page.get("text") or "") for page in ordered_pages)
+    return extracted_text, ordered_pages
+
+
 def analyze_pdf_document(source_url: str, timeout: int = 60) -> dict[str, Any]:
     pdf_path: Path | None = None
     try:
-        pdf_path = _download_pdf(source_url, timeout=timeout)
+        remote_fingerprint = fetch_pdf_source_fingerprint(source_url, timeout=min(timeout, 30))
+        pdf_path, content_fingerprint = _download_pdf(source_url, timeout=timeout)
+        source_fingerprint = remote_fingerprint or content_fingerprint
         page_count = _extract_pdf_page_count(pdf_path)
         extracted_text = _extract_pdf_text(pdf_path)
         normalized_text = _normalize_whitespace(extracted_text.replace("\f", " \f "))
@@ -271,8 +408,31 @@ def analyze_pdf_document(source_url: str, timeout: int = 60) -> dict[str, Any]:
                 "pageCount": page_count,
                 "wordCount": word_count,
                 "error": "",
+                "sourceFingerprint": source_fingerprint,
             }
 
+        ai_error = ""
+        try:
+            ai_text, ai_pages = _extract_pdf_text_with_ai_vision(pdf_path)
+            ai_normalized_text = _normalize_whitespace(ai_text.replace("\f", " \f "))
+            ai_word_count = _count_words(ai_normalized_text)
+            if ai_word_count > 0:
+                return {
+                    "status": "ready",
+                    "method": "ai",
+                    "sourceUrl": source_url,
+                    "text": ai_normalized_text,
+                    "pages": _structure_pages_from_ai_extraction(ai_pages),
+                    "pageCount": page_count,
+                    "wordCount": ai_word_count,
+                    "error": "",
+                    "sourceFingerprint": source_fingerprint,
+                }
+            ai_error = "Cohere Vision returned no readable text."
+        except PDFDocumentProcessingError as exc:
+            ai_error = str(exc)
+
+        ocr_error = ""
         if shutil.which("ocrmypdf"):
             try:
                 ocr_text = _ocr_pdf_with_ocrmypdf(pdf_path)
@@ -288,6 +448,7 @@ def analyze_pdf_document(source_url: str, timeout: int = 60) -> dict[str, Any]:
                         "pageCount": page_count,
                         "wordCount": ocr_word_count,
                         "error": "",
+                        "sourceFingerprint": source_fingerprint,
                     }
                 ocr_error = "OCRmyPDF returned no readable text."
             except PDFDocumentProcessingError as exc:
@@ -303,7 +464,8 @@ def analyze_pdf_document(source_url: str, timeout: int = 60) -> dict[str, Any]:
             "pages": _structure_pages_from_text(extracted_text, page_count),
             "pageCount": page_count,
             "wordCount": word_count,
-            "error": ocr_error,
+            "error": "; ".join(error for error in [ai_error, ocr_error] if error),
+            "sourceFingerprint": source_fingerprint,
         }
     except PDFDocumentProcessingError as exc:
         return {
@@ -315,6 +477,7 @@ def analyze_pdf_document(source_url: str, timeout: int = 60) -> dict[str, Any]:
             "pageCount": 0,
             "wordCount": 0,
             "error": str(exc),
+            "sourceFingerprint": "",
         }
     finally:
         if pdf_path is not None:

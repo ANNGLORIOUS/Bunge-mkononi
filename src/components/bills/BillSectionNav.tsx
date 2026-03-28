@@ -15,7 +15,8 @@ export default function BillSectionNav({ billId }: { billId: string }) {
   const baseHref = `/bills/${billId}`;
 
   return (
-    <nav className="mt-6 flex flex-wrap gap-2">
+    <nav className="border-t border-[var(--line-strong)] bg-[#f6f1ea] px-7 py-4">
+      <div className="flex flex-wrap gap-2">
       {sections.map((section) => {
         const href = `${baseHref}${section.hrefSuffix}`;
         const active = pathname === href;
@@ -25,16 +26,17 @@ export default function BillSectionNav({ billId }: { billId: string }) {
             key={section.label}
             href={href}
             aria-current={active ? 'page' : undefined}
-            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+            className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
               active
-                ? 'bg-brand text-white shadow-lg shadow-brand/20'
-                : 'border border-slate-200 bg-white text-slate-600 hover:border-brand/20 hover:text-brand-strong'
+                ? 'border-slate-950 bg-slate-950 text-white shadow-lg shadow-slate-950/15'
+                : 'border-slate-300 bg-white text-slate-700 hover:border-clay-400 hover:text-forest-800'
             }`}
           >
             {section.label}
           </Link>
         );
       })}
+      </div>
     </nav>
   );
 }

@@ -15,17 +15,24 @@ REQUIRED_DOCUMENT_COLUMNS = {
     "document_status",
     "document_method",
     "document_source_url",
+    "document_source_fingerprint",
     "document_text",
     "document_pages",
     "document_error",
     "document_page_count",
     "document_word_count",
     "document_processed_at",
+    "ai_summary",
+    "ai_key_points",
+    "ai_timeline",
+    "ai_source_hash",
+    "ai_error",
+    "ai_processed_at",
 }
 
 
 class Command(BaseCommand):
-    help = "Extract text from bill PDFs and store the structured output on each Bill."
+    help = "Extract text from bill PDFs and refresh the stored AI bill insights on each Bill."
 
     def add_arguments(self, parser):
         parser.add_argument(

@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowUpRight, Command, Landmark, MessageSquare, PhoneCall } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview' },
@@ -12,43 +11,97 @@ const NAV_ITEMS = [
 ] as const;
 
 function isActiveRoute(pathname: string, href: string) {
-  if (href === '/') {
-    return pathname === '/';
-  }
-
+  if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function BungeLogo() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="12" width="14" height="1.5" rx="0.75" fill="#5da882" />
+      <rect x="5" y="4" width="1.5" height="9" rx="0.75" fill="white" />
+      <rect x="8.25" y="1" width="1.5" height="12" rx="0.75" fill="white" />
+      <rect x="11.5" y="5.5" width="1.5" height="7.5" rx="0.75" fill="white" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" strokeWidth="1.25" />
+      <path d="M9 9l2.5 2.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ParticipateIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path
+        d="M2 10l2.5-2.5M10.5 2.5C9 1 6.5 1 5 2.5l-1 1 4.5 4.5 1-1C11 5.5 12 4 10.5 2.5z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M4.5 7.5L2 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path
+        d="M2 11c.5-2 2-3 4.5-3s4 1 4.5 3M6.5 7a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"
+        stroke="rgba(255,255,255,0.7)"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
 }
 
 export default function SiteHeader() {
   const pathname = usePathname();
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
-      <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
-        <div className="surface-card flex flex-col gap-4 bg-white/98 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-white shadow-sm">
-              <Landmark size={20} />
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/60 bg-white">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="flex h-16 items-center justify-between gap-8">
+
+          {/* Wordmark */}
+          <Link href="/" className="flex flex-shrink-0 items-center gap-2.5">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-[#1a3d2b]">
+              <BungeLogo />
             </span>
-            <span>
-              <span className="eyebrow block text-slate-500">Bunge Mkononi</span>
-              <span className="block text-sm font-semibold text-foreground">Parliament in your pocket</span>
+            <span className="flex flex-col gap-px">
+              <span
+                className="text-[15px] font-bold leading-none text-[#1a3d2b]"
+                style={{ fontFamily: 'var(--font-site-serif)' }}
+              >
+                Bunge Mkononi
+              </span>
+              <span className="text-[10px] font-medium uppercase tracking-[0.07em] leading-none text-slate-400">
+                Parliament in your pocket
+              </span>
             </span>
           </Link>
 
-          <nav className="flex flex-wrap items-center gap-2">
+          {/* Navigation pill group */}
+          <nav className="flex items-center gap-0 rounded-[10px] border border-slate-200/80 bg-slate-100/70 p-[3px]">
             {NAV_ITEMS.map((item) => {
               const active = isActiveRoute(pathname, item.href);
-
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   aria-current={active ? 'page' : undefined}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  className={`rounded-lg px-3.5 py-1.5 text-[13px] font-medium transition-all duration-150 ${
                     active
-                      ? 'bg-brand text-white shadow-lg shadow-brand/15'
-                      : 'border border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-brand-strong'
+                      ? 'bg-[#1a3d2b] font-semibold text-white shadow-sm'
+                      : 'text-slate-500 hover:bg-white hover:text-slate-800'
                   }`}
                 >
                   {item.label}
@@ -57,31 +110,41 @@ export default function SiteHeader() {
             })}
           </nav>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Actions */}
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {/* Search */}
             <Link
               href="/bills"
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-brand/20 hover:text-brand-strong"
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-[7px] text-[12px] font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
             >
-              <Command size={14} />
-              <span className="metric-mono text-xs">K</span>
-              <span className="hidden sm:inline">Search bills</span>
+              <SearchIcon />
+              <span>Bills</span>
+              <kbd className="rounded border border-slate-200 bg-white px-1 py-px font-mono text-[10px] font-semibold tracking-wider text-slate-400">
+                ⌘K
+              </kbd>
             </Link>
+
+            <div className="h-[18px] w-px bg-slate-200" />
+
+            {/* Participate */}
             <Link
               href="/participate"
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-brand/20 hover:text-brand-strong"
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-[7px] text-[13px] font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
             >
-              <MessageSquare size={14} />
-              Join in
+              <ParticipateIcon />
+              Participate
             </Link>
+
+            {/* USSD CTA */}
             <a
               href="tel:*384*16250#"
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-strong px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand"
+              className="flex items-center gap-1.5 rounded-lg bg-[#bb3d2a] px-3.5 py-[7px] text-[13px] font-semibold text-white transition hover:opacity-90"
             >
-              <PhoneCall size={14} />
-              <span className="metric-mono">*384*16250#</span>
-              <ArrowUpRight size={14} />
+              <UserIcon />
+              <span className="font-mono text-[12px] tracking-wide">*384*16250#</span>
             </a>
           </div>
+
         </div>
       </div>
     </header>
